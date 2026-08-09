@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from digital_twin_engine.api.metrics import messages_processed_total
@@ -25,6 +26,7 @@ from digital_twin_engine.broker.topics import (
     TELEMETRY_RAW,
 )
 from digital_twin_engine.shared.logging import get_logger
+from digital_twin_engine.shared.models import Prediction
 
 logger = get_logger("broker_subscriber")
 
@@ -67,6 +69,7 @@ class BrokerSubscriber:
         self._broker: Optional[BrokerBackend] = None
         self._state_cache: Optional[StateCache] = None
         self._ws_manager: Optional[WebSocketBroadcastManager] = None
+        self._gateway_predictions_cache: Optional[Dict[str, List[Prediction]]] = None
         self._predictions_cache: Dict[str, List[dict]] = {}
         self._running: bool = False
         self._degraded: bool = False
@@ -92,6 +95,7 @@ class BrokerSubscriber:
         broker: BrokerBackend,
         state_cache: StateCache,
         ws_manager: WebSocketBroadcastManager,
+        predictions_cache: Optional[Dict[str, List[Prediction]]] = None,
     ) -> None:
         """Start subscribing to broker topics.
 
@@ -102,10 +106,13 @@ class BrokerSubscriber:
             broker: The BrokerBackend instance to subscribe through.
             state_cache: The StateCache to update on corrections.state messages.
             ws_manager: The WebSocketBroadcastManager for broadcasting messages.
+            predictions_cache: Optional gateway predictions cache to populate
+                with Prediction objects for the REST endpoint.
         """
         self._broker = broker
         self._state_cache = state_cache
         self._ws_manager = ws_manager
+        self._gateway_predictions_cache = predictions_cache
         self._running = True
         self._degraded = False
 
@@ -277,8 +284,8 @@ class BrokerSubscriber:
     def _update_predictions_cache(self, key: str, payload: dict) -> None:
         """Update the predictions cache from a predictions.state message.
 
-        Extracts sensor_id and predictions list from the payload and
-        stores them in the predictions cache.
+        Populates both the local dict cache (for legacy use) and the gateway's
+        Prediction-object cache (for the REST endpoint).
 
         Args:
             key: The message key (sensor_id).
@@ -288,6 +295,40 @@ class BrokerSubscriber:
             sensor_id = payload.get("sensor_id", key)
             predictions = payload.get("predictions", [])
             self._predictions_cache[sensor_id] = predictions
+
+            # Also populate the gateway's typed predictions cache
+            if self._gateway_predictions_cache is not None:
+                try:
+                    ts_str = payload.get("prediction_timestamp", "")
+                    if ts_str:
+                        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    else:
+                        ts = datetime.now(timezone.utc)
+
+                    prediction = Prediction(
+                        sensor_id=sensor_id,
+                        prediction_timestamp=ts,
+                        prediction_horizon_seconds=payload.get("prediction_horizon_seconds", 0),
+                        state_vector=payload.get("values", payload.get("state_vector", [])),
+                        model_used=payload.get("source", payload.get("model_used", "ensemble")),
+                        ensemble_weights={"ensemble": 1.0},
+                    )
+
+                    # Keep last N predictions per sensor
+                    if sensor_id not in self._gateway_predictions_cache:
+                        self._gateway_predictions_cache[sensor_id] = []
+                    cache = self._gateway_predictions_cache[sensor_id]
+                    cache.append(prediction)
+                    # Keep max 50 predictions per sensor
+                    if len(cache) > 50:
+                        self._gateway_predictions_cache[sensor_id] = cache[-50:]
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to create Prediction object for gateway cache",
+                        sensor_id=sensor_id,
+                        error=str(exc),
+                    )
+
             logger.debug(
                 "Predictions cache updated",
                 sensor_id=sensor_id,

@@ -2,11 +2,13 @@
 
 Implements the full BrokerBackend interface using a simple dictionary
 of topic → subscriber callbacks. Messages published to a topic are
-delivered to all subscribers synchronously within the same event loop
-iteration, making it ideal for single-process deployments and tests.
+delivered to all subscribers asynchronously via scheduled tasks, allowing
+the event loop to remain responsive for HTTP/WebSocket serving.
 """
 
 from __future__ import annotations
+
+import asyncio
 
 from digital_twin_engine.broker.base import BrokerBackend, MessageCallback
 
@@ -15,8 +17,8 @@ class InMemoryBrokerBackend(BrokerBackend):
     """In-memory message broker for Local Mode and testing.
 
     Implements the full BrokerBackend interface without external dependencies.
-    Messages published to a topic are delivered to all subscribers
-    synchronously within the same event loop iteration.
+    Messages published to a topic are delivered to subscribers via asyncio
+    tasks, preventing event loop starvation during heavy processing.
 
     Attributes:
         _subscribers: Mapping of topic names to lists of (group_id, callback)
@@ -27,6 +29,7 @@ class InMemoryBrokerBackend(BrokerBackend):
     def __init__(self) -> None:
         self._subscribers: dict[str, list[tuple[str, MessageCallback]]] = {}
         self._running: bool = False
+        self._pending_tasks: set[asyncio.Task] = set()
 
     async def start(self) -> None:
         """Initialize the in-memory broker for operation.
@@ -42,12 +45,16 @@ class InMemoryBrokerBackend(BrokerBackend):
         """
         self._running = False
         self._subscribers.clear()
+        # Cancel pending delivery tasks
+        for task in self._pending_tasks:
+            task.cancel()
+        self._pending_tasks.clear()
 
     async def publish(self, topic: str, key: str, message: bytes) -> None:
         """Publish a message to the specified topic.
 
-        Invokes all registered subscriber callbacks synchronously within
-        the same event loop tick (awaiting each callback in sequence).
+        Schedules subscriber callbacks as asyncio tasks so they don't block
+        the publishing coroutine or starve the event loop.
 
         Args:
             topic: The target topic name.
@@ -56,7 +63,9 @@ class InMemoryBrokerBackend(BrokerBackend):
         """
         subscribers = self._subscribers.get(topic, [])
         for _group_id, callback in subscribers:
-            await callback(topic, key, message)
+            task = asyncio.create_task(callback(topic, key, message))
+            self._pending_tasks.add(task)
+            task.add_done_callback(self._pending_tasks.discard)
 
     async def subscribe(
         self, topic: str, group_id: str, callback: MessageCallback

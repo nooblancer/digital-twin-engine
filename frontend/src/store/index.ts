@@ -76,6 +76,36 @@ export const useStore = create<StoreState>((set) => ({
   appendSensorData: (sensor_id, point) =>
     set((state) => {
       const existing = state.sensorData[sensor_id] ?? [];
+      
+      // Try to merge with the last entry if timestamps are close (within 2 seconds)
+      const MERGE_THRESHOLD_MS = 2000;
+      const lastIdx = existing.length - 1;
+      
+      if (lastIdx >= 0 && Math.abs(existing[lastIdx].timestamp - point.timestamp) < MERGE_THRESHOLD_MS) {
+        // Merge into existing entry
+        const merged = { ...existing[lastIdx], ...point };
+        const updated = [...existing.slice(0, lastIdx), merged];
+        return {
+          sensorData: {
+            ...state.sensorData,
+            [sensor_id]: updated,
+          },
+        };
+      }
+      
+      // Also check second-to-last (predictions sometimes arrive slightly after corrections)
+      if (lastIdx >= 1 && Math.abs(existing[lastIdx - 1].timestamp - point.timestamp) < MERGE_THRESHOLD_MS) {
+        const merged = { ...existing[lastIdx - 1], ...point };
+        const updated = [...existing.slice(0, lastIdx - 1), merged, existing[lastIdx]];
+        return {
+          sensorData: {
+            ...state.sensorData,
+            [sensor_id]: updated,
+          },
+        };
+      }
+      
+      // Otherwise append as new entry
       const updated =
         existing.length >= MAX_BUFFER_SIZE
           ? [...existing.slice(1), point]

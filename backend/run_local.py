@@ -127,7 +127,7 @@ async def run_local() -> None:
 
     # --- Create Broker Subscriber (feeds state cache + WebSocket broadcasts) ---
     subscriber = BrokerSubscriber()
-    await subscriber.start(broker, gateway.state_cache, gateway.ws_manager)
+    await subscriber.start(broker, gateway.state_cache, gateway.ws_manager, gateway.predictions_cache)
 
     # --- TSDB Consumer (batch-writes raw telemetry to TSDB) ---
     tsdb_consumer = TSDBConsumer(broker=broker, tsdb_backend=tsdb)
@@ -187,7 +187,7 @@ async def run_local() -> None:
             dataset="FD001",
             split="train",
             engine_ids=[1],
-            speed=5.0,
+            speed=1.0,
             max_cycles=None,
             loop=True,
         )
@@ -221,6 +221,8 @@ async def run_local() -> None:
         host="0.0.0.0",
         port=8000,
         log_level="warning",
+        ws_ping_interval=None,  # Disable WebSocket keepalive pings to prevent timeout crashes
+        ws_ping_timeout=None,
     )
     server = uvicorn.Server(uvicorn_config)
 
