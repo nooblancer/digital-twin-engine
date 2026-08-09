@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.hypothesis/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (download separately)
+data/cmapss/*.txt
+data/cmapss/*.zip
+
+# Docker
+.docker/
+
+# Node (frontend)
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+
+# Env files
+.env
+.env.local
