@@ -514,7 +514,12 @@ class TestProperty23PatternGeneratorMathematicalCorrectness:
         for i in range(num_steps):
             value = generate_random_walk(config, previous, rng=rng)
             step = value - previous
-            assert -config.max_step <= step <= config.max_step, (
+            # Allow small floating-point tolerance: when previous_value is
+            # much larger than max_step, (previous + step) - previous may
+            # differ from step due to loss of precision.
+            tol = max(abs(previous), 1.0) * 1e-10
+            bound = config.max_step + tol
+            assert -bound <= step <= bound, (
                 f"Step {i}: step {step} exceeds bounds ±{config.max_step}"
             )
             previous = value

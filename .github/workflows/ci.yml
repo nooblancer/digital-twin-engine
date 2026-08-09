@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  local-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+        working-directory: backend
+      - name: Run unit and property tests
+        run: pytest --tb=short -q
+        working-directory: backend
+
+  docker-build-and-smoke:
+    runs-on: ubuntu-latest
+    needs: local-tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t digital-twin-engine:ci .
+        working-directory: backend
+      - name: Start Docker stack
+        run: docker compose up -d
+      - name: Wait for health checks
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health; then break; fi
+            sleep 2
+          done
+      - name: Smoke test — health endpoint
+        run: curl -sf http://localhost:8000/health
+      - name: Smoke test — WebSocket connection
+        run: |
+          pip install websockets
+          python -c "
+          import asyncio, websockets
+          async def test():
+              async with websockets.connect('ws://localhost:8000/ws/telemetry') as ws:
+                  msg = await asyncio.wait_for(ws.recv(), timeout=60)
+                  assert msg
+          asyncio.run(test())
+          "
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Run frontend tests
+        run: npm test
+        working-directory: frontend

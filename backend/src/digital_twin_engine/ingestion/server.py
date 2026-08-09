@@ -37,6 +37,7 @@ from digital_twin_engine.ingestion.publisher import (
     BrokerType,
     TelemetryPublisher,
 )
+from digital_twin_engine.ingestion.metrics import events_ingested_total, router as metrics_router
 
 
 logger = get_logger("ingestion_server")
@@ -246,6 +247,9 @@ def create_app(config: EngineConfig | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Include Prometheus metrics router (Requirements 9.2, 9.5)
+    app.include_router(metrics_router)
+
     # Store config and manager on app state for access in routes
     app.state.config = config
     app.state.connection_manager = manager
@@ -318,7 +322,9 @@ def create_app(config: EngineConfig | None = None) -> FastAPI:
                 # Validate the incoming telemetry payload
                 try:
                     event = validate_telemetry_payload(data)
-                    # Valid event - publish to the message broker
+                    # Valid event - increment Prometheus counter (Requirement 9.5)
+                    events_ingested_total.inc()
+                    # Publish to the message broker
                     try:
                         latency_ms = await publisher.publish(event)
                         manager.record_publish_latency(latency_ms)

@@ -12,10 +12,13 @@ Key features:
 """
 
 from digital_twin_engine.tsdb.consumer import TSDBConsumer, TSDB_CONSUMER_GROUP
-from digital_twin_engine.tsdb.writer import TSDBWriter, TSDBWriteError, WriteFailureLog
+from digital_twin_engine.tsdb.memory_backend import InMemoryTSDBBackend
+from digital_twin_engine.tsdb.writer import TSDBBackend, TSDBWriter, TSDBWriteError, WriteFailureLog
 
 __all__ = [
+    "InMemoryTSDBBackend",
     "TSDB_CONSUMER_GROUP",
+    "TSDBBackend",
     "TSDBConsumer",
     "TSDBWriteError",
     "TSDBWriter",

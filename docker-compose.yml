@@ -4,26 +4,40 @@ version: "3.9"
 # Digital Twin Telemetry Engine - Full Pipeline Docker Compose
 #
 # Pipeline flow:
-#   Simulator → Ingestion Server → Kafka → TSDB Writer + ML Service
-#                                        → Correction Engine → API Gateway
+#   Adapter → Ingestion Server → Kafka → TSDB Writer + ML Service
+#                                       → Correction Engine → API Gateway
 #
-# Services communicate exclusively via Kafka topics:
+# Services communicate exclusively via Kafka topics (Docker network DNS):
 #   telemetry.raw        : Ingestion → TSDB Writer, ML Service, Correction Engine
 #   predictions.state    : ML Service → Correction Engine
 #   corrections.state    : Correction Engine → API Gateway
 #   alerts.anomaly       : Correction Engine → (consumers)
-#   metrics.pipeline     : All → (monitoring)
+#
+# Port assignments (no conflicts):
+#   2181  - Zookeeper
+#   9092  - Kafka (external)
+#   29092 - Kafka (internal, not exposed to host)
+#   6379  - Redis
+#   8086  - InfluxDB
+#   5432  - TimescaleDB
+#   8080  - Ingestion Server
+#   8000  - API Gateway
+#   3001  - Grafana (internal 3000)
+#   9090  - Prometheus
+#   5173  - Frontend (reserved)
 # ===========================================================================
 
 x-common-env: &common-env
   BROKER_TYPE: kafka
   BROKER_URL: kafka:29092
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  REDIS_URL: redis://redis:6379
   PYTHONUNBUFFERED: "1"
   LOG_FORMAT: json
 
 x-common-build: &common-build
   build:
-    context: .
+    context: ./backend
     dockerfile: Dockerfile
 
 services:
@@ -32,7 +46,7 @@ services:
   # =========================================================================
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.7.1
+    image: confluentinc/cp-zookeeper:7.5.0
     container_name: dt-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -46,14 +60,13 @@ services:
       retries: 5
 
   kafka:
-    image: confluentinc/cp-kafka:7.7.1
+    image: confluentinc/cp-kafka:7.5.0
     container_name: dt-kafka
     depends_on:
       zookeeper:
         condition: service_healthy
     ports:
       - "9092:9092"
-      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -68,6 +81,17 @@ services:
       test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
       interval: 10s
       timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: dt-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
   influxdb:
@@ -106,17 +130,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  redis:
-    image: redis:7.4-alpine
-    container_name: dt-redis
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    profiles:
+      - timescaledb
 
   # =========================================================================
   # Application Services
@@ -141,6 +156,52 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  ml-service:
+    <<: *common-build
+    container_name: dt-ml-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      MIN_BATCH_SIZE: "10"
+      MAX_BATCH_SIZE: "500"
+      MAX_BATCH_WAIT_SECONDS: "5.0"
+      PREDICTION_HORIZON_SECONDS: "60.0"
+      LSTM_WEIGHT: "0.6"
+      XGBOOST_WEIGHT: "0.4"
+      MODEL_DIR: "/app/models"
+      METRICS_PORT: "9090"
+    command: ["python", "-m", "digital_twin_engine.ml_service"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import sys; sys.exit(0)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  correction-engine:
+    <<: *common-build
+    container_name: dt-correction-engine
+    depends_on:
+      kafka:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+    environment:
+      <<: *common-env
+      ENSEMBLE_SIZE: "50"
+      TEMPORAL_TOLERANCE_SECONDS: "1.0"
+      ANOMALY_THRESHOLD_SIGMA: "3.0"
+      METRICS_PORT: "9091"
+    command: ["python", "-m", "digital_twin_engine.correction"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import sys; sys.exit(0)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   tsdb-writer:
@@ -169,56 +230,13 @@ services:
       retries: 3
     restart: unless-stopped
 
-  ml-service:
-    <<: *common-build
-    container_name: dt-ml-service
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      <<: *common-env
-      MIN_BATCH_SIZE: "10"
-      MAX_BATCH_SIZE: "500"
-      MAX_BATCH_WAIT_SECONDS: "5.0"
-      PREDICTION_HORIZON_SECONDS: "60.0"
-      LSTM_WEIGHT: "0.6"
-      XGBOOST_WEIGHT: "0.4"
-    command: ["python", "-m", "digital_twin_engine.ml_service"]
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import sys; sys.exit(0)\""]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-
-  correction-engine:
-    <<: *common-build
-    container_name: dt-correction-engine
-    depends_on:
-      kafka:
-        condition: service_healthy
-      ml-service:
-        condition: service_started
-    environment:
-      <<: *common-env
-      ENSEMBLE_SIZE: "50"
-      TEMPORAL_TOLERANCE_SECONDS: "1.0"
-      ANOMALY_THRESHOLD_SIGMA: "3.0"
-    command: ["python", "-m", "digital_twin_engine.correction"]
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import sys; sys.exit(0)\""]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-
   api-gateway:
     <<: *common-build
     container_name: dt-api-gateway
     depends_on:
       kafka:
         condition: service_healthy
-      influxdb:
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -230,6 +248,7 @@ services:
       INFLUXDB_TOKEN: dev-token-digital-twin
       INFLUXDB_ORG: digital-twin
       INFLUXDB_BUCKET: telemetry
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
       DEFAULT_PAGE_SIZE: "100"
       MAX_PAGE_SIZE: "1000"
     command: ["python", "-m", "digital_twin_engine.api"]
@@ -240,15 +259,39 @@ services:
       retries: 5
     restart: unless-stopped
 
+  adapter:
+    <<: *common-build
+    container_name: dt-adapter
+    depends_on:
+      ingestion-server:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      INGESTION_URL: http://ingestion-server:8080
+    command: ["python", "-m", "digital_twin_engine.adapters"]
+    restart: unless-stopped
+
   # =========================================================================
   # Monitoring Services
   # =========================================================================
 
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: dt-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      ingestion-server:
+        condition: service_healthy
+    restart: unless-stopped
+
   grafana:
-    image: grafana/grafana:10.4.2
+    image: grafana/grafana:10.2.0
     container_name: dt-grafana
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
@@ -258,6 +301,8 @@ services:
       - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
       - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
     restart: unless-stopped
 
 volumes:

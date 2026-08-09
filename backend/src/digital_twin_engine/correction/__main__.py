@@ -25,6 +25,16 @@ async def run() -> None:
         anomaly_threshold_sigma=float(os.environ.get("ANOMALY_THRESHOLD_SIGMA", "3.0")),
     )
 
+    # Start Prometheus metrics server
+    from digital_twin_engine.correction.metrics import (
+        correction_iterations_total,
+        messages_processed_total,
+        start_metrics_server,
+    )
+
+    start_metrics_server()
+    logger.info("Prometheus metrics server started", port=int(os.environ.get("CORRECTION_METRICS_PORT", "9091")))
+
     # Initialize broker backend
     if broker_type == "kafka":
         from digital_twin_engine.broker.kafka_backend import KafkaBrokerBackend
@@ -38,15 +48,32 @@ async def run() -> None:
     # Initialize EnKF iteration handler
     from digital_twin_engine.correction.enkf import EnKFIteration
 
-    enkf_iteration = EnKFIteration(broker=broker)
+    enkf_iteration_handler = EnKFIteration(broker=broker)
 
-    # Initialize temporal matcher
+    # Wrap the EnKF iteration handler to instrument with Prometheus metrics
+    async def instrumented_on_match(matched_pair, enkf_state):
+        await enkf_iteration_handler(matched_pair, enkf_state)
+        correction_iterations_total.inc()
+
+    # Initialize temporal matcher with instrumented callback
     from digital_twin_engine.correction.temporal_matcher import TemporalMatcher
+
+    # Wrap broker subscribe to increment messages_processed_total
+    original_subscribe = broker.subscribe
+
+    async def instrumented_subscribe(topic, group_id, callback):
+        async def wrapped_callback(t, k, m):
+            messages_processed_total.inc()
+            await callback(t, k, m)
+
+        await original_subscribe(topic, group_id, wrapped_callback)
+
+    broker.subscribe = instrumented_subscribe  # type: ignore[assignment]
 
     matcher = TemporalMatcher(
         broker=broker,
         config=config,
-        on_match=enkf_iteration,
+        on_match=instrumented_on_match,
         consumer_group="correction-engine-group",
     )
 

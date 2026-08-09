@@ -99,7 +99,7 @@ class TestCreateApp:
 
     def test_create_app_has_websocket_route(self) -> None:
         app = create_app()
-        routes = [r.path for r in app.routes]
+        routes = [r.path for r in app.routes if hasattr(r, "path")]
         assert "/ws/telemetry" in routes
 
 
