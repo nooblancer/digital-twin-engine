@@ -12,12 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy and install the package
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null || pip install --no-cache-dir .
-
-# Copy application source
-COPY digital_twin_engine/ ./digital_twin_engine/
+COPY src/ ./src/
+RUN pip install --no-cache-dir .
 
 # Default healthcheck (overridden per-service in compose)
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \

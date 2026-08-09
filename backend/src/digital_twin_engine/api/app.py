@@ -13,10 +13,12 @@ Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 7.10
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from digital_twin_engine.api.models import (
@@ -29,14 +31,17 @@ from digital_twin_engine.api.models import (
     PredictedStateEntry,
 )
 from digital_twin_engine.api.state_cache import CachedState, StateCache
+from digital_twin_engine.api.websocket_manager import WebSocketBroadcastManager
 from digital_twin_engine.shared.logging import get_logger
 from digital_twin_engine.shared.models import Prediction, StateVector
 from digital_twin_engine.tsdb.writer import TSDBBackend
 
 logger = get_logger("api_gateway")
 
-# Lazy import to avoid circular imports - health router is included at app creation time
+# Lazy import to avoid circular imports - routers are included at app creation time
 _health_router = None
+_source_router = None
+_metrics_router = None
 
 
 def _get_health_router():
@@ -46,6 +51,24 @@ def _get_health_router():
         from digital_twin_engine.api.health import router as health_router
         _health_router = health_router
     return _health_router
+
+
+def _get_source_router():
+    """Lazily import the source controller router to avoid circular imports."""
+    global _source_router
+    if _source_router is None:
+        from digital_twin_engine.api.source_controller import router as source_router
+        _source_router = source_router
+    return _source_router
+
+
+def _get_metrics_router():
+    """Lazily import the metrics router to avoid circular imports."""
+    global _metrics_router
+    if _metrics_router is None:
+        from digital_twin_engine.api.metrics import router as metrics_router
+        _metrics_router = metrics_router
+    return _metrics_router
 
 
 class APIGateway:
@@ -67,6 +90,7 @@ class APIGateway:
         self._tsdb_backend = tsdb_backend
         self._state_cache = state_cache or StateCache()
         self._predictions_cache: dict[str, List[Prediction]] = {}
+        self._ws_manager = WebSocketBroadcastManager()
         self._app = self._create_app()
 
     @property
@@ -84,6 +108,11 @@ class APIGateway:
         """Access the predictions cache for external updates."""
         return self._predictions_cache
 
+    @property
+    def ws_manager(self) -> WebSocketBroadcastManager:
+        """Access the WebSocket broadcast manager."""
+        return self._ws_manager
+
     def set_tsdb_backend(self, backend: TSDBBackend) -> None:
         """Set or replace the TSDB backend."""
         self._tsdb_backend = backend
@@ -96,8 +125,26 @@ class APIGateway:
             version="1.0.0",
         )
 
+        # CORS middleware configuration (Requirements 3.1, 3.2, 3.3, 3.4)
+        cors_origins = os.environ.get(
+            "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
+        ).split(",")
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
+            allow_credentials=True,
+        )
+
         # Include health router (from task 9.4)
         app.include_router(_get_health_router())
+
+        # Include source controller router (Requirements 5.1, 5.2, 5.3, 5.4)
+        app.include_router(_get_source_router())
+
+        # Include Prometheus metrics router (Requirements 9.1, 9.5)
+        app.include_router(_get_metrics_router())
 
         @app.get(
             "/sensors/{sensor_id}/state/current",
@@ -329,6 +376,25 @@ class APIGateway:
                 sensor_id=sensor_id,
                 predictions=entries,
             )
+
+        @app.websocket("/ws/telemetry")
+        async def websocket_telemetry(websocket: WebSocket) -> None:
+            """WebSocket endpoint for real-time telemetry broadcasts.
+
+            Accepts a client connection, registers it with the broadcast
+            manager, and keeps it alive until the client disconnects.
+            """
+            await self._ws_manager.connect(websocket)
+            try:
+                while True:
+                    # Keep the connection alive by waiting for incoming messages.
+                    # We don't process client messages but need the receive loop
+                    # to detect disconnection.
+                    await websocket.receive_text()
+            except WebSocketDisconnect:
+                await self._ws_manager.disconnect(websocket)
+            except Exception:
+                await self._ws_manager.disconnect(websocket)
 
         return app
 

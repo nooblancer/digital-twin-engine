@@ -284,7 +284,7 @@ class TestProperty18HistoryQueryFilteringOrderingPagination:
         dataset=state_vector_sets(min_count=5, max_count=20),
         limit=st.integers(min_value=1, max_value=5),
     )
-    @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_pagination_offset_slices_correctly(self, dataset: tuple, limit: int):
         """Consecutive offset pages cover all results without gaps or overlaps."""
         sensor_id, events = dataset

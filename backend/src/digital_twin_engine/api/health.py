@@ -36,6 +36,7 @@ COMPONENT_NAMES = [
     "ingestion_server",
     "message_broker",
     "tsdb",
+    "tsdb_writer",
     "ml_service",
     "correction_engine",
 ]

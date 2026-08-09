@@ -7,6 +7,7 @@ using the LSTM+XGBoost ensemble.
 
 import asyncio
 import os
+import time
 
 from digital_twin_engine.shared.logging import get_logger
 from digital_twin_engine.shared.models import EngineConfig
@@ -28,6 +29,16 @@ async def run() -> None:
         xgboost_weight=float(os.environ.get("XGBOOST_WEIGHT", "0.4")),
     )
 
+    # Start Prometheus metrics server
+    from digital_twin_engine.ml_service.metrics import (
+        inference_latency_seconds,
+        messages_processed_total,
+        start_metrics_server,
+    )
+
+    start_metrics_server()
+    logger.info("Prometheus metrics server started", port=int(os.environ.get("ML_METRICS_PORT", "9090")))
+
     # Initialize broker backend
     if broker_type == "kafka":
         from digital_twin_engine.broker.kafka_backend import KafkaBrokerBackend
@@ -38,24 +49,26 @@ async def run() -> None:
 
         broker = RedisBrokerBackend(redis_url=broker_url)
 
-    # Initialize ensemble inference with stub models (replace with real models in production)
-    from digital_twin_engine.ml_service.ensemble_inference import (
-        EnsembleInference,
-        StubLSTMModel,
-        StubXGBoostModel,
-    )
+    # Load ML models (falls back to stubs if files are missing or corrupted)
+    from digital_twin_engine.ml_service.ensemble_inference import EnsembleInference
+    from digital_twin_engine.ml_service.model_loader import ModelLoader
 
-    lstm_model = StubLSTMModel()
-    xgboost_model = StubXGBoostModel()
+    loader = ModelLoader()
+    lstm_model, xgboost_model = loader.load_all()
     inference = EnsembleInference(
         lstm_model=lstm_model,
         xgboost_model=xgboost_model,
         config=config,
     )
 
-    # Prediction function for the batch accumulator
+    # Prediction function for the batch accumulator with metrics instrumentation
     async def predict_fn(sensor_id, events, cfg):
-        return await inference.predict(sensor_id, events, cfg)
+        messages_processed_total.inc()
+        start = time.perf_counter()
+        result = await inference.predict(sensor_id, events, cfg)
+        elapsed = time.perf_counter() - start
+        inference_latency_seconds.observe(elapsed)
+        return result
 
     # Initialize batch accumulator
     from digital_twin_engine.ml_service.batch_accumulator import BatchAccumulator

@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "ingestion-server"
+    static_configs:
+      - targets: ["ingestion-server:8080"]
+    metrics_path: /metrics
+
+  - job_name: "api-gateway"
+    static_configs:
+      - targets: ["api-gateway:8000"]
+    metrics_path: /metrics
+
+  - job_name: "ml-service"
+    static_configs:
+      - targets: ["ml-service:9090"]
+    metrics_path: /metrics
+
+  - job_name: "correction-engine"
+    static_configs:
+      - targets: ["correction-engine:9091"]
+    metrics_path: /metrics
