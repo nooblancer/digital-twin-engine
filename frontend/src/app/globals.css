@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark-first neutral palette (default is dark) */
+    --background: 220 14% 6%;
+    --foreground: 210 20% 92%;
+
+    --card: 220 13% 9%;
+    --card-foreground: 210 20% 92%;
+
+    --popover: 220 13% 9%;
+    --popover-foreground: 210 20% 92%;
+
+    /* Restrained accent - a muted teal/cyan */
+    --primary: 192 45% 55%;
+    --primary-foreground: 220 14% 6%;
+
+    --secondary: 220 12% 14%;
+    --secondary-foreground: 210 20% 92%;
+
+    --muted: 220 12% 14%;
+    --muted-foreground: 215 12% 58%;
+
+    --accent: 220 12% 16%;
+    --accent-foreground: 210 20% 92%;
+
+    --destructive: 0 62% 52%;
+    --destructive-foreground: 210 20% 92%;
+
+    --border: 220 12% 18%;
+    --input: 220 12% 18%;
+    --ring: 192 45% 55%;
+
+    /* Muted chart colors - thin strokes, subtle */
+    --chart-raw: 215 20% 55%;
+    --chart-predicted: 192 40% 55%;
+    --chart-corrected: 150 35% 50%;
+    --chart-grid: 220 10% 20%;
+
+    /* Semantic status colors */
+    --status-healthy: 150 45% 45%;
+    --status-warning: 40 70% 55%;
+    --status-critical: 0 62% 52%;
+    --status-unknown: 220 10% 40%;
+
+    --radius: 8px;
+  }
+
+  /* Light mode override (secondary, dark-first means dark is default) */
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 220 14% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 14% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 14% 10%;
+
+    --primary: 192 45% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 12% 95%;
+    --secondary-foreground: 220 14% 10%;
+
+    --muted: 220 12% 95%;
+    --muted-foreground: 215 12% 45%;
+
+    --accent: 220 12% 93%;
+    --accent-foreground: 220 14% 10%;
+
+    --destructive: 0 62% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 12% 88%;
+    --input: 220 12% 88%;
+    --ring: 192 45% 45%;
+
+    --chart-raw: 215 25% 45%;
+    --chart-predicted: 192 45% 40%;
+    --chart-corrected: 150 40% 40%;
+    --chart-grid: 220 10% 90%;
+
+    --status-healthy: 150 45% 40%;
+    --status-warning: 40 70% 50%;
+    --status-critical: 0 62% 50%;
+    --status-unknown: 220 10% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}

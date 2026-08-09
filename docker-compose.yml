@@ -240,6 +240,26 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # =========================================================================
+  # Monitoring Services
+  # =========================================================================
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: dt-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    restart: unless-stopped
+
 volumes:
   influxdb-data:
   timescaledb-data:
