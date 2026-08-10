@@ -7,7 +7,17 @@ messages to all active connections. Messages are sent in the format:
 Handles client disconnection gracefully — a failing send to one client
 does not affect broadcasts to other connected clients.
 
-Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7
+Supported message types:
+    - telemetry: Raw telemetry events
+    - prediction: ML prediction state vectors
+    - correction: EnKF-corrected state vectors
+    - anomaly: Anomaly detection alerts
+    - rul_update: Remaining Useful Life estimates per engine
+    - health_index_update: Composite health index per engine
+    - subsystem_health_update: Per-subsystem health scores and classifications
+    - degradation_update: Degradation rate per engine
+
+Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 8.1, 8.2, 8.3
 """
 
 from __future__ import annotations
@@ -21,6 +31,26 @@ from digital_twin_engine.api.metrics import ws_connections_active
 from digital_twin_engine.shared.logging import get_logger
 
 logger = get_logger("websocket_manager")
+
+# All valid message types that can be broadcast via WebSocket.
+# Existing pipeline message types:
+#   telemetry, prediction, correction, anomaly
+# Digital twin prognostics message types (Requirements 8.1, 8.2, 8.3):
+#   rul_update, health_index_update, subsystem_health_update, degradation_update
+VALID_MESSAGE_TYPES = frozenset(
+    [
+        "telemetry",
+        "prediction",
+        "correction",
+        "anomaly",
+        "rul_update",
+        "health_index_update",
+        "subsystem_health_update",
+        "degradation_update",
+        "urgent_attention",
+        "critical_health_alert",
+    ]
+)
 
 
 class WebSocketBroadcastManager:
@@ -77,13 +107,26 @@ class WebSocketBroadcastManager:
         If sending to a specific client fails, that client is removed from
         the active set and the broadcast continues to remaining clients.
 
+        Supported message types include both pipeline types (telemetry,
+        prediction, correction, anomaly) and digital twin prognostics types
+        (rul_update, health_index_update, subsystem_health_update,
+        degradation_update, urgent_attention, critical_health_alert).
+
         Args:
             message_type: The type field for the message (e.g., "correction",
-                "prediction", "anomaly", "telemetry").
+                "prediction", "anomaly", "telemetry", "rul_update",
+                "health_index_update", "subsystem_health_update",
+                "degradation_update").
             payload: The payload dictionary to include in the message.
         """
         if not self._active_connections:
             return
+
+        if message_type not in VALID_MESSAGE_TYPES:
+            logger.warning(
+                "Unknown message type broadcast attempted",
+                message_type=message_type,
+            )
 
         message = json.dumps({"type": message_type, "payload": payload})
         disconnected: Set[WebSocket] = set()

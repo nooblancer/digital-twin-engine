@@ -9,13 +9,44 @@ import type {
   PredictionPayload,
   CorrectionPayload,
   AnomalyPayload,
+  RULUpdatePayload,
+  HealthIndexUpdatePayload,
+  SubsystemHealthUpdatePayload,
+  DegradationUpdatePayload,
+  EngineSnapshot,
 } from '@/types';
 
 const DEFAULT_WS_URL =
   process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws/telemetry';
 
+const DEFAULT_API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+/**
+ * Fetches the latest engine snapshot from the REST API.
+ * Used on WebSocket reconnection to restore display state without full data replay.
+ */
+async function fetchEngineSnapshot(
+  apiBase: string,
+  engineId: number
+): Promise<EngineSnapshot | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/engines/${engineId}/snapshot`);
+    if (!response.ok) {
+      console.warn(
+        `[useWebSocket] Snapshot fetch failed for engine ${engineId}: ${response.status}`
+      );
+      return null;
+    }
+    return (await response.json()) as EngineSnapshot;
+  } catch (error) {
+    console.warn(`[useWebSocket] Snapshot fetch error for engine ${engineId}:`, error);
+    return null;
+  }
 }
 
 /**
@@ -23,17 +54,43 @@ function generateId(): string {
  * endpoint with exponential backoff reconnection.
  *
  * Dispatches incoming messages to the Zustand store based on `type` field.
+ * On reconnection, requests the latest engine snapshot(s) to restore state.
  */
 export function useWebSocket(url: string = DEFAULT_WS_URL): void {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptsRef = useRef(0);
   const unmountedRef = useRef(false);
+  const hasConnectedBefore = useRef(false);
 
   const appendSensorData = useStore((s) => s.appendSensorData);
   const addAnomaly = useStore((s) => s.addAnomaly);
   const updateSensorHealth = useStore((s) => s.updateSensorHealth);
   const setConnectionState = useStore((s) => s.setConnectionState);
+  const updateRUL = useStore((s) => s.updateRUL);
+  const updateHealthIndex = useStore((s) => s.updateHealthIndex);
+  const updateSubsystemHealth = useStore((s) => s.updateSubsystemHealth);
+  const updateDegradation = useStore((s) => s.updateDegradation);
+  const restoreSnapshot = useStore((s) => s.restoreSnapshot);
+
+  const requestSnapshotsOnReconnect = useCallback(async () => {
+    const state = useStore.getState();
+    const engineIds = Object.keys(state.engines).map(Number);
+
+    if (engineIds.length === 0) return;
+
+    const snapshotPromises = engineIds.map((engineId) =>
+      fetchEngineSnapshot(DEFAULT_API_BASE, engineId)
+    );
+
+    const snapshots = await Promise.all(snapshotPromises);
+
+    for (const snapshot of snapshots) {
+      if (snapshot && !unmountedRef.current) {
+        restoreSnapshot(snapshot);
+      }
+    }
+  }, [restoreSnapshot]);
 
   const handleMessage = useCallback(
     (event: MessageEvent) => {
@@ -88,11 +145,39 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
           });
           break;
         }
+        case 'rul_update': {
+          const payload = message.payload as RULUpdatePayload;
+          updateRUL(payload);
+          break;
+        }
+        case 'health_index_update': {
+          const payload = message.payload as HealthIndexUpdatePayload;
+          updateHealthIndex(payload);
+          break;
+        }
+        case 'subsystem_health_update': {
+          const payload = message.payload as SubsystemHealthUpdatePayload;
+          updateSubsystemHealth(payload);
+          break;
+        }
+        case 'degradation_update': {
+          const payload = message.payload as DegradationUpdatePayload;
+          updateDegradation(payload);
+          break;
+        }
         default:
-          console.warn('[useWebSocket] Unknown message type:', message.type);
+          console.warn('[useWebSocket] Unknown message type:', (message as { type: string }).type);
       }
     },
-    [appendSensorData, addAnomaly, updateSensorHealth]
+    [
+      appendSensorData,
+      addAnomaly,
+      updateSensorHealth,
+      updateRUL,
+      updateHealthIndex,
+      updateSubsystemHealth,
+      updateDegradation,
+    ]
   );
 
   const connect = useCallback(() => {
@@ -108,13 +193,22 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
         ws.close();
         return;
       }
+
+      const isReconnection = hasConnectedBefore.current;
+      hasConnectedBefore.current = true;
       attemptsRef.current = 0;
+
       setConnectionState({
         status: 'connected',
         reconnectAttempts: 0,
         lastConnected: Date.now(),
         nextRetryMs: null,
       });
+
+      // On reconnection, request snapshots to restore display state
+      if (isReconnection) {
+        requestSnapshotsOnReconnect();
+      }
     };
 
     ws.onmessage = handleMessage;
@@ -145,7 +239,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
         console.warn('[useWebSocket] Connection error');
       }
     };
-  }, [url, handleMessage, setConnectionState]);
+  }, [url, handleMessage, setConnectionState, requestSnapshotsOnReconnect]);
 
   useEffect(() => {
     unmountedRef.current = false;
@@ -171,3 +265,4 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
 
 export default useWebSocket;
 export { computeBackoffDelay } from '@/lib/websocket-utils';
+export { fetchEngineSnapshot };

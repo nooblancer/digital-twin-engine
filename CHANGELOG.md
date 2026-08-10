@@ -1,201 +1,56 @@
-# Digital Twin Engine — Project Timeline & Progress Tracker
+# Changelog
 
-## v6.0a — Backend Infrastructure Complete & Full Pipeline Live
+## [0.2.0] - 2024-08-10 — Digital Twin Experience
 
-**Release Date:** August 2026
+### Summary
 
----
+Transforms the platform from a raw sensor data pipeline into a true digital twin experience for turbofan engine prognostics. Adds engine-level health monitoring, Remaining Useful Life (RUL) prediction, degradation trajectory visualization, component health mapping, and a visual engine schematic — all in real time via WebSocket.
 
-## Version History
+### Added
 
-### v6.0a — Production-Ready Backend Infrastructure (Current)
+#### Backend Services
+- **RUL Predictor** (`prognostics/rul_predictor.py`) — Computes Remaining Useful Life (0–125 cycles) per engine using piecewise-linear degradation model. Emits `urgent_attention` events when RUL drops below 30.
+- **Health Index Aggregator** (`prognostics/health_index.py`) — Computes composite health score (0.0–1.0) per engine per cycle using weighted sensor deviations from baseline. Top 3 sensors (HPC temp, core speed, fan speed) carry 55% weight.
+- **Degradation Curve Tracker** (`prognostics/degradation_tracker.py`) — Records health index trajectory per engine. Computes degradation rate via linear least-squares over last 20 cycles. Emits accelerated degradation events.
+- **Component Health Mapper** (`prognostics/component_health.py`) — Maps 21 sensors to 6 engine subsystems (fan, LPC, HPC, HPT, LPT, combustor). Computes per-subsystem health with classification hysteresis (nominal/degraded/critical).
+- **Engine Snapshot API** (`api/engines.py`) — `GET /api/engines/{engine_id}/snapshot` returns full prognostic state for WebSocket reconnection recovery.
+- **Application lifecycle wiring** — All services register at startup, subscribe to `corrections.state`, and broadcast results via WebSocket.
 
-The entire backend is now fully functional with dual-mode architecture, real-time data flowing end-to-end, and a live dashboard visualizing sensor telemetry.
+#### Frontend Views
+- **Fleet Overview** (`/fleet`) — Card grid showing all monitored engines sorted by urgency (RUL ascending). Each card displays unit ID, health gauge, RUL countdown, and classification badge. Color-coded green/amber/red.
+- **Engine Dashboard** (`/engine/[id]`) — Prominent RUL indicator with critical emphasis at <30 cycles. Health trajectory line chart (Recharts). Degradation rate display. Engine selector dropdown.
+- **Engine Schematic** — SVG turbofan cross-section with 6 color-coded subsystem regions. Tooltip on hover shows health score (2dp) and classification. Accessible with text labels and screen reader support.
 
-**Key Achievements:**
-- Dual-mode architecture (Local Mode + Docker Mode) fully operational
-- Frontend dashboard displays live telemetry, predictions, corrections, and anomaly alerts
-- All 601 tests passing (unit + property-based with Hypothesis)
-- CI/CD pipeline configured for automated validation
-- Zero external dependencies required for local development
+#### WebSocket Integration
+- Extended `WebSocketBroadcastManager` with message types: `rul_update`, `health_index_update`, `subsystem_health_update`, `degradation_update`
+- Frontend Zustand store slice with actions for all digital twin message types
+- `useWebSocket` hook routes new message types to store actions
+- Snapshot restore on WebSocket reconnection
 
-**New Features:**
-- In-memory broker backend for zero-dependency local development
-- In-memory TSDB backend for time-series storage without InfluxDB/TimescaleDB
-- WebSocket broadcast manager with real-time fan-out to all connected clients
-- Broker subscriber with payload transformation for frontend compatibility
-- CORS middleware with configurable origins
-- Data source switching endpoint (`POST /source`)
-- ML Model Loader with graceful fallback to stub models
-- Prometheus metrics on all services (counters, histograms, gauges)
-- TimescaleDB backend as alternative to InfluxDB
-- Local Mode runner (`python run_local.py`) — full pipeline in one process
-- Health endpoint with per-component status reporting
-- C-MAPSS dataset download script with synthetic fallback
-- Docker Compose with full infrastructure stack
-- GitHub Actions CI pipeline (local tests + Docker smoke tests + frontend tests)
+#### Testing
+- 25 property-based tests (Hypothesis/fast-check) covering all design correctness properties
+- Unit tests for all 4 backend services + 3 frontend views
+- Integration tests for end-to-end pipeline (corrections.state → services → WebSocket → frontend state)
+- Total test count: ~800 (backend 683 + frontend 120)
 
-**Bug Fixes:**
-- Fixed Dockerfile COPY path for `src/` layout
-- Fixed health endpoint not registering checks in Local Mode
-- Fixed WebSocket payload field name mismatch between backend and frontend
-- Fixed adapter shutdown causing premature pipeline termination
-- Fixed log flooding in Local Mode terminal
-- Fixed pipeline health showing "Down" due to missing `tsdb_writer` component name
+### Changed
+- C-MAPSS adapter now streams 3 engines by default (was 1)
+- Landing page hero CTA now links to Fleet Overview as primary action
+- Health Index formula caps per-sensor deviation at 3 std devs to prevent extreme values with partial baselines
 
----
-
-### v5.0 — Dashboard Frontend & Monitoring
-
-**Milestone:** Interactive React dashboard with real-time visualization
-
-**Features:**
-- Next.js 14 React dashboard with Tailwind CSS
-- Real-time sensor charts (Recharts) with raw/predicted/corrected overlays
-- WebSocket connection with exponential backoff reconnection
-- Pipeline Health Monitor with per-component status
-- Anomaly Alert Feed with severity indicators
-- Prediction Horizon View
-- Historical Trend Explorer with date range queries
-- Sensor Health Cards with status derivation
-- Data Source Switcher (NASA C-MAPSS)
-- Zustand state management with ring-buffer data stores
-- Grafana monitoring dashboards
-- Vitest + Testing Library test suite with fast-check property tests
-- Framer Motion animations
+### Fixed
+- `configure_engine_services()` wiring was missing from `run_local.py` — snapshot API returned 404 for all engines
+- Component Health Mapper expected `value`/`cycle` payload fields that don't exist in EnKF output — fixed to use `corrected_state_vector[0]` and duplicate-sensor cycle detection
+- Degradation Curve Tracker was not receiving data — wired as dependency of Health Index Aggregator
 
 ---
 
-### v4.0 — Correction Engine & EnKF
+## [0.1.0] — Initial Pipeline
 
-**Milestone:** Ensemble Kalman Filter producing corrected state estimates
-
-**Features:**
-- TemporalMatcher for pairing predictions with observations
-- EnKF iteration with configurable ensemble size
-- Anomaly detection via innovation magnitude thresholds
-- Matrix singularity handling with Moore-Penrose pseudo-inverse
-- Ensemble collapse prevention via re-inflation
-- Corrected state publication to broker
-- TSDB persistence of corrected states
-
----
-
-### v3.0 — ML Service & Ensemble Inference
-
-**Milestone:** Real-time ML predictions from telemetry batches
-
-**Features:**
-- BatchAccumulator with per-sensor event buffers
-- Configurable min/max batch sizes with timeout triggers
-- Ensemble inference combining LSTM + XGBoost predictions
-- Stub models for development (trivial predictions)
-- Model loading support for PyTorch (.pt) and joblib (.joblib)
-- Prediction publishing to broker topics
-
----
-
-### v2.0 — Core Pipeline & Message Broker
-
-**Milestone:** Event-driven pipeline with Kafka broker integration
-
-**Features:**
-- KafkaBrokerBackend with consumer groups and offset tracking
-- RedisBrokerBackend as alternative broker
-- InfluxDB TSDB backend for time-series persistence
-- Topic-based message routing (telemetry.raw, predictions.state, corrections.state, alerts.anomaly)
-- TSDB Writer with batch windowing
-- Ingestion Server with WebSocket telemetry intake
-- Structured JSON logging with correlation IDs
-- Pydantic models with float64 precision serialization
-
----
-
-### v1.0 — Foundation & NASA C-MAPSS Adapter
-
-**Milestone:** Project scaffolding and data ingestion
-
-**Features:**
-- Python project with FastAPI/asyncio architecture
-- NASA C-MAPSS Turbofan Engine Degradation dataset adapter
-- 21-channel sensor replay with configurable playback speed
-- Multi-engine concurrent streaming
-- TelemetryEvent data model with validation
-- StateVector data model
-- Protocol-based backend interfaces (BrokerBackend, TSDBBackend)
-- pytest + Hypothesis testing infrastructure
-- Initial property-based tests for data models
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Local Mode (Single Process)                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  C-MAPSS Adapter ──► InMemoryBroker ──┬──► ML Service            │
-│                                        │      │                   │
-│                                        │      ▼                   │
-│                                        │   Correction Engine      │
-│                                        │      │                   │
-│                                        ▼      ▼                   │
-│                                   API Gateway (port 8000)         │
-│                                     │         │                   │
-│                                     ▼         ▼                   │
-│                              REST Endpoints  WebSocket Broadcast   │
-│                                                   │               │
-│                                                   ▼               │
-│                              Frontend Dashboard (port 3000)        │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                 Docker Mode (Microservices)                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  Adapter ──► Ingestion Server ──► Kafka ──┬──► ML Service         │
-│                                            │      │               │
-│                                            │      ▼               │
-│                                            │   Correction Engine  │
-│                                            │      │               │
-│                                            ▼      ▼               │
-│  InfluxDB/TimescaleDB ◄── TSDB Writer    API Gateway              │
-│                                            │                      │
-│  Prometheus ──► Grafana                    ▼                      │
-│                                    Frontend Dashboard              │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Test Coverage
-
-| Category | Count | Framework |
-|----------|-------|-----------|
-| Unit Tests | ~400 | pytest |
-| Property-Based Tests | ~200 | Hypothesis (100+ examples each) |
-| Frontend Tests | ~50 | Vitest + Testing Library + fast-check |
-| Integration Tests | 15 (Docker-only) | pytest |
-| **Total** | **601 passing + 15 skipped** | |
-
-## Technology Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Backend | Python 3.11+, FastAPI, asyncio, uvicorn |
-| ML | PyTorch (LSTM), scikit-learn (XGBoost), NumPy, SciPy |
-| Broker | Kafka (Docker), Redis (Docker), In-Memory (Local) |
-| TSDB | InfluxDB, TimescaleDB, In-Memory (Local) |
-| Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS, Recharts |
-| State | Zustand (frontend), structlog (backend observability) |
-| Monitoring | Prometheus, Grafana |
-| Testing | pytest, Hypothesis, Vitest, fast-check, Testing Library |
-| CI/CD | GitHub Actions |
-| Container | Docker, Docker Compose |
-
----
-
-*This document tracks the evolution of the Digital Twin Engine from initial concept to production-ready system.*
+- Real-time sensor ingestion via WebSocket
+- ML ensemble prediction (LSTM + XGBoost)
+- Ensemble Kalman Filter state correction
+- Anomaly detection with innovation-based thresholds
+- REST API with health endpoints
+- C-MAPSS replay adapter
+- 486 property-based + unit tests

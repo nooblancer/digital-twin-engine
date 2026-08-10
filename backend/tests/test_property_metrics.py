@@ -119,6 +119,12 @@ class TestProperty6MetricsCounterAccuracy:
             for _ in range(n):
                 await broker.publish(topic, key, message_bytes)
 
+            # Allow all scheduled delivery tasks to complete before stopping.
+            # The InMemoryBrokerBackend delivers via asyncio.create_task, so we
+            # need to yield control and wait for pending tasks to finish.
+            while broker._pending_tasks:
+                await asyncio.sleep(0)
+
             await subscriber.stop()
             await broker.stop()
 
