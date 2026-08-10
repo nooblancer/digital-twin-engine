@@ -264,7 +264,7 @@ class TestMessageHandling:
         self, subscriber: BrokerSubscriber, broker: AsyncMock,
         state_cache: StateCache, ws_manager: AsyncMock,
     ):
-        """corrections.state messages should be broadcast as type 'correction'."""
+        """corrections.state messages should be broadcast as type 'correction' with transformed payload."""
         await subscriber.start(broker, state_cache, ws_manager)
 
         callback = self._get_callback_for_topic(broker, CORRECTIONS_STATE)
@@ -280,42 +280,75 @@ class TestMessageHandling:
 
         await callback(CORRECTIONS_STATE, "sensor-1", message)
 
-        ws_manager.broadcast.assert_awaited_once_with("correction", payload)
+        # The broker subscriber transforms payloads to the frontend WebSocket contract
+        expected_broadcast = {
+            "sensor_id": "sensor-1",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "values": [1.0, 2.0],
+            "ensemble_spread": 0.05,
+            "anomaly_flag": False,
+        }
+        ws_manager.broadcast.assert_awaited_once_with("correction", expected_broadcast)
 
     async def test_predictions_broadcast_to_websocket(
         self, subscriber: BrokerSubscriber, broker: AsyncMock,
         state_cache: StateCache, ws_manager: AsyncMock,
     ):
-        """predictions.state messages should be broadcast as type 'prediction'."""
+        """predictions.state messages should be broadcast as type 'prediction' with transformed payload."""
         await subscriber.start(broker, state_cache, ws_manager)
 
         callback = self._get_callback_for_topic(broker, PREDICTIONS_STATE)
 
         payload = {
             "sensor_id": "sensor-2",
-            "predictions": [{"state_vector": [1.0]}],
+            "prediction_timestamp": "2024-01-01T00:01:00Z",
+            "values": [1.0, 2.0],
+            "prediction_horizon_seconds": 60,
+            "source": "ensemble",
         }
         message = json.dumps(payload).encode()
 
         await callback(PREDICTIONS_STATE, "sensor-2", message)
 
-        ws_manager.broadcast.assert_awaited_once_with("prediction", payload)
+        # The broker subscriber transforms payloads to the frontend WebSocket contract
+        expected_broadcast = {
+            "sensor_id": "sensor-2",
+            "prediction_timestamp": "2024-01-01T00:01:00Z",
+            "state_vector": [1.0, 2.0],
+            "model_used": "ensemble",
+            "prediction_horizon_seconds": 60,
+        }
+        ws_manager.broadcast.assert_awaited_once_with("prediction", expected_broadcast)
 
     async def test_anomaly_broadcast_to_websocket(
         self, subscriber: BrokerSubscriber, broker: AsyncMock,
         state_cache: StateCache, ws_manager: AsyncMock,
     ):
-        """alerts.anomaly messages should be broadcast as type 'anomaly'."""
+        """alerts.anomaly messages should be broadcast as type 'anomaly' with transformed payload."""
         await subscriber.start(broker, state_cache, ws_manager)
 
         callback = self._get_callback_for_topic(broker, ALERTS_ANOMALY)
 
-        payload = {"sensor_id": "sensor-3", "anomaly_score": 0.95}
+        payload = {
+            "sensor_id": "sensor-3",
+            "correction_timestamp": "2024-01-01T00:00:00Z",
+            "observed_value": 5.0,
+            "predicted_value": 2.0,
+            "innovation_magnitude": 3.0,
+            "threshold": 2.5,
+        }
         message = json.dumps(payload).encode()
 
         await callback(ALERTS_ANOMALY, "sensor-3", message)
 
-        ws_manager.broadcast.assert_awaited_once_with("anomaly", payload)
+        # The broker subscriber transforms anomaly payloads to frontend contract
+        expected_broadcast = {
+            "sensor_id": "sensor-3",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "severity": "informational",
+            "description": "Innovation magnitude 3.000 exceeds threshold 2.5 (observed=5.0000, predicted=2.0000)",
+        }
+        ws_manager.broadcast.assert_awaited_once_with("anomaly", expected_broadcast)
 
     async def test_telemetry_broadcast_to_websocket(
         self, subscriber: BrokerSubscriber, broker: AsyncMock,

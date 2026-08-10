@@ -1,3 +1,10 @@
+import type {
+  RULUpdatePayload,
+  HealthIndexUpdatePayload,
+  SubsystemHealthUpdatePayload,
+  DegradationUpdatePayload,
+} from './digital-twin';
+
 export interface TelemetryPayload {
   sensor_id: string;
   timestamp: string;
@@ -28,7 +35,25 @@ export interface AnomalyPayload {
   description: string;
 }
 
+export type MessageType =
+  | 'telemetry'
+  | 'prediction'
+  | 'correction'
+  | 'anomaly'
+  | 'rul_update'
+  | 'health_index_update'
+  | 'subsystem_health_update'
+  | 'degradation_update';
+
 export interface WebSocketMessage {
-  type: 'telemetry' | 'prediction' | 'correction' | 'anomaly';
-  payload: TelemetryPayload | PredictionPayload | CorrectionPayload | AnomalyPayload;
+  type: MessageType;
+  payload:
+    | TelemetryPayload
+    | PredictionPayload
+    | CorrectionPayload
+    | AnomalyPayload
+    | RULUpdatePayload
+    | HealthIndexUpdatePayload
+    | SubsystemHealthUpdatePayload
+    | DegradationUpdatePayload;
 }

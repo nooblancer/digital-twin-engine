@@ -9,7 +9,9 @@ import type {
   ConnectionStatus,
   DataSourceId,
   CorrectionPayload,
+  DigitalTwinState,
 } from '@/types';
+import { createDigitalTwinSlice } from './digital-twin';
 
 const MAX_BUFFER_SIZE = 200;
 const MAX_ANOMALIES = 100;
@@ -21,7 +23,7 @@ interface UIState {
   isSwitchingSource: boolean;
 }
 
-interface StoreState {
+interface StoreState extends DigitalTwinState {
   // Slices
   sensorData: Record<string, ChartDataPoint[]>;
   anomalies: AnomalyAlert[];
@@ -53,7 +55,10 @@ export function deriveSensorStatus(correction: CorrectionPayload): SensorStatus 
   return 'healthy';
 }
 
-export const useStore = create<StoreState>((set) => ({
+export const useStore = create<StoreState>((set, get, store) => ({
+  // Digital Twin slice
+  ...createDigitalTwinSlice(set, get, store),
+
   // Initial state
   sensorData: {},
   anomalies: [],

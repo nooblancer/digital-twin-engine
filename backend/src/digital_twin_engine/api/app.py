@@ -42,6 +42,7 @@ logger = get_logger("api_gateway")
 _health_router = None
 _source_router = None
 _metrics_router = None
+_engines_router = None
 
 
 def _get_health_router():
@@ -69,6 +70,15 @@ def _get_metrics_router():
         from digital_twin_engine.api.metrics import router as metrics_router
         _metrics_router = metrics_router
     return _metrics_router
+
+
+def _get_engines_router():
+    """Lazily import the engines router to avoid circular imports."""
+    global _engines_router
+    if _engines_router is None:
+        from digital_twin_engine.api.engines import router as engines_router
+        _engines_router = engines_router
+    return _engines_router
 
 
 class APIGateway:
@@ -145,6 +155,9 @@ class APIGateway:
 
         # Include Prometheus metrics router (Requirements 9.1, 9.5)
         app.include_router(_get_metrics_router())
+
+        # Include engines router (Requirements 8.5)
+        app.include_router(_get_engines_router())
 
         @app.get(
             "/sensors/{sensor_id}/state/current",

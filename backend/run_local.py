@@ -39,6 +39,7 @@ import structlog
 from digital_twin_engine.adapters.cmapss_replay import CMAPSSConfig, CMAPSSReplayAdapter
 from digital_twin_engine.api.app import APIGateway
 from digital_twin_engine.api.broker_subscriber import BrokerSubscriber
+from digital_twin_engine.api.engines import configure_engine_services
 from digital_twin_engine.api.health import register_health_check
 from digital_twin_engine.broker import InMemoryBrokerBackend
 from digital_twin_engine.broker.topics import TELEMETRY_RAW
@@ -46,6 +47,10 @@ from digital_twin_engine.correction.enkf import EnKFIteration
 from digital_twin_engine.correction.temporal_matcher import TemporalMatcher
 from digital_twin_engine.ml_service.batch_accumulator import BatchAccumulator
 from digital_twin_engine.ml_service.ensemble_inference import create_ensemble_predict_fn
+from digital_twin_engine.prognostics.component_health import ComponentHealthMapper
+from digital_twin_engine.prognostics.degradation_tracker import DegradationCurveTracker
+from digital_twin_engine.prognostics.health_index import HealthIndexAggregator
+from digital_twin_engine.prognostics.rul_predictor import RULPredictor
 from digital_twin_engine.shared.models import ComponentStatus, EngineConfig, StateVector, TelemetryEvent
 from digital_twin_engine.shared.models import serialize_telemetry_event
 from digital_twin_engine.tsdb import InMemoryTSDBBackend, TSDBConsumer
@@ -73,6 +78,10 @@ def print_banner() -> None:
     ✓ API Gateway (FastAPI)
     ✓ C-MAPSS Adapter (auto-start)
     ✓ WebSocket Broadcast
+    ✓ RUL Predictor
+    ✓ Health Index Aggregator
+    ✓ Degradation Curve Tracker
+    ✓ Component Health Mapper
 
   Access:
     API:       http://localhost:8000
@@ -163,6 +172,31 @@ async def run_local() -> None:
     )
     await matcher.start()
 
+    # --- Digital Twin Prognostics Services ---
+    rul_predictor = RULPredictor(broker=broker, ws_manager=gateway.ws_manager)
+    await rul_predictor.start()
+
+    degradation_tracker = DegradationCurveTracker(ws_manager=gateway.ws_manager)
+
+    health_index_aggregator = HealthIndexAggregator(
+        broker=broker, ws_manager=gateway.ws_manager,
+        degradation_tracker=degradation_tracker,
+    )
+    await health_index_aggregator.start()
+
+    component_health_mapper = ComponentHealthMapper(
+        broker=broker, ws_manager=gateway.ws_manager
+    )
+    await component_health_mapper.start()
+
+    # --- Wire services into API snapshot endpoint ---
+    configure_engine_services(
+        rul_predictor=rul_predictor,
+        health_index_aggregator=health_index_aggregator,
+        component_health_mapper=component_health_mapper,
+        degradation_tracker=degradation_tracker,
+    )
+
     # --- Register health checks for Local Mode ---
     # In Local Mode all components are in-process; report HEALTHY when running.
     async def _healthy() -> ComponentStatus:
@@ -186,7 +220,7 @@ async def run_local() -> None:
             data_dir=data_dir,
             dataset="FD001",
             split="train",
-            engine_ids=[1],
+            engine_ids=[1, 2, 3],
             speed=1.0,
             max_cycles=None,
             loop=True,
@@ -267,6 +301,9 @@ async def run_local() -> None:
                 pass
     finally:
         # Graceful cleanup
+        await rul_predictor.stop()
+        await health_index_aggregator.stop()
+        await component_health_mapper.stop()
         await accumulator.stop()
         await matcher.stop()
         await tsdb_consumer.stop()

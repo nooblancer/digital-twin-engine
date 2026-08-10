@@ -106,6 +106,7 @@ function Navbar() {
         </Link>
 
         <div className="hidden sm:flex items-center gap-6">
+          <Link href="/fleet" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Fleet</Link>
           <a href="#architecture" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Architecture</a>
           <a href="#sources" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Sources</a>
           <a href="#roadmap" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Roadmap</a>
@@ -171,10 +172,17 @@ function Hero() {
 
           <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Link
-              href="/dashboard"
+              href="/fleet"
               className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/20"
             >
-              View Live Dashboard
+              Fleet Overview
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-accent transition-colors"
+            >
+              Sensor Dashboard
               <ArrowRight className="h-4 w-4" />
             </Link>
             <a

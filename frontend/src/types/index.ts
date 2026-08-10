@@ -1,10 +1,22 @@
 export type {
   WebSocketMessage,
+  MessageType,
   TelemetryPayload,
   PredictionPayload,
   CorrectionPayload,
   AnomalyPayload,
 } from './websocket';
+
+export type {
+  RULUpdatePayload,
+  HealthIndexUpdatePayload,
+  SubsystemHealthUpdatePayload,
+  DegradationUpdatePayload,
+  EngineSnapshot,
+  EngineState,
+  SubsystemState,
+  DigitalTwinState,
+} from './digital-twin';
 
 export type { DataSourceId, DataSource } from './data-sources';
 
