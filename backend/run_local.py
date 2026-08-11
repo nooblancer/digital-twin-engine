@@ -37,10 +37,13 @@ import uvicorn
 import structlog
 
 from digital_twin_engine.adapters.cmapss_replay import CMAPSSConfig, CMAPSSReplayAdapter
+from digital_twin_engine.adapters.__main__ import fault_injector
 from digital_twin_engine.api.app import APIGateway
 from digital_twin_engine.api.broker_subscriber import BrokerSubscriber
 from digital_twin_engine.api.engines import configure_engine_services
+from digital_twin_engine.api.fault_injection_api import configure_fault_injector
 from digital_twin_engine.api.health import register_health_check
+from digital_twin_engine.api.simulation_api import configure_simulation_services
 from digital_twin_engine.broker import InMemoryBrokerBackend
 from digital_twin_engine.broker.topics import TELEMETRY_RAW
 from digital_twin_engine.correction.enkf import EnKFIteration
@@ -53,6 +56,10 @@ from digital_twin_engine.prognostics.health_index import HealthIndexAggregator
 from digital_twin_engine.prognostics.rul_predictor import RULPredictor
 from digital_twin_engine.shared.models import ComponentStatus, EngineConfig, StateVector, TelemetryEvent
 from digital_twin_engine.shared.models import serialize_telemetry_event
+from digital_twin_engine.simulation.fault_injector import FaultInjector
+from digital_twin_engine.simulation.failure_prob_cache import FailureProbabilityCache
+from digital_twin_engine.simulation.monte_carlo_projector import MonteCarloProjector
+from digital_twin_engine.simulation.what_if_simulator import WhatIfSimulator
 from digital_twin_engine.tsdb import InMemoryTSDBBackend, TSDBConsumer
 
 
@@ -82,6 +89,10 @@ def print_banner() -> None:
     ✓ Health Index Aggregator
     ✓ Degradation Curve Tracker
     ✓ Component Health Mapper
+    ✓ Fault Injector
+    ✓ Monte Carlo Projector
+    ✓ What-If Simulator
+    ✓ Failure Probability Cache
 
   Access:
     API:       http://localhost:8000
@@ -211,6 +222,28 @@ async def run_local() -> None:
         degradation_tracker=degradation_tracker,
     )
 
+    # --- Wire FaultInjector singleton into the fault injection API ---
+    configure_fault_injector(fault_injector)
+
+    # --- Wire Simulation Services (MonteCarloProjector, WhatIfSimulator, FailureProbabilityCache) ---
+    monte_carlo_projector = MonteCarloProjector(
+        health_index_aggregator=health_index_aggregator,
+        degradation_tracker=degradation_tracker,
+    )
+    what_if_simulator = WhatIfSimulator(projector=monte_carlo_projector)
+    failure_prob_cache = FailureProbabilityCache(
+        projector=monte_carlo_projector,
+        health_index_aggregator=health_index_aggregator,
+        degradation_tracker=degradation_tracker,
+    )
+    configure_simulation_services(
+        what_if_simulator=what_if_simulator,
+        failure_prob_cache=failure_prob_cache,
+    )
+
+    # Start the FailureProbabilityCache background task
+    await failure_prob_cache.start()
+
     # --- C-MAPSS Replay Adapter ---
     async def run_adapter() -> None:
         """Run the C-MAPSS replay adapter, publishing events to the broker.
@@ -228,7 +261,7 @@ async def run_local() -> None:
             loop=True,
         )
 
-        adapter = CMAPSSReplayAdapter(cmapss_config)
+        adapter = CMAPSSReplayAdapter(cmapss_config, fault_injector=fault_injector)
         try:
             adapter.load()
         except FileNotFoundError:
@@ -303,6 +336,7 @@ async def run_local() -> None:
                 pass
     finally:
         # Graceful cleanup
+        await failure_prob_cache.stop()
         await rul_predictor.stop()
         await health_index_aggregator.stop()
         await component_health_mapper.stop()

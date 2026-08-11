@@ -4,6 +4,8 @@
  * and engine selector dropdown behavior.
  *
  * Validates: Requirements 6.1, 6.2, 6.4, 6.6
+ *
+ * Updated for v1.3 integration: RULCountdown and DegradationCurveProjection components.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
@@ -19,10 +21,36 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
+// Mock useWebSocket hook
+vi.mock('@/hooks/useWebSocket', () => ({
+  useWebSocket: () => {},
+  default: () => {},
+}));
+
+// Mock framer-motion (used by RULCountdown)
+vi.mock('framer-motion', () => ({
+  motion: {
+    p: ({ children, className, ...rest }: Record<string, unknown>) => (
+      <p data-testid="rul-countdown-value" className={className as string}>
+        {children as React.ReactNode}
+      </p>
+    ),
+    div: ({ children, className, ...rest }: Record<string, unknown>) => (
+      <div className={className as string}>{children as React.ReactNode}</div>
+    ),
+  },
+  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 // Mock Recharts to avoid SVG rendering issues in jsdom
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="responsive-container">{children}</div>
+  ),
+  ComposedChart: ({ data, children }: { data: unknown[]; children: React.ReactNode }) => (
+    <div data-testid="composed-chart" data-points={JSON.stringify(data)}>
+      {children}
+    </div>
   ),
   LineChart: ({ data }: { data: unknown[] }) => (
     <div data-testid="line-chart" data-points={JSON.stringify(data)} />
@@ -30,10 +58,47 @@ vi.mock('recharts', () => ({
   Line: ({ dataKey }: { dataKey: string }) => (
     <div data-testid={`line-${dataKey}`} />
   ),
+  Area: ({ dataKey }: { dataKey: string }) => (
+    <div data-testid={`area-${dataKey}`} />
+  ),
   XAxis: () => <div data-testid="x-axis" />,
   YAxis: () => <div data-testid="y-axis" />,
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
   Tooltip: () => <div data-testid="tooltip" />,
+  ReferenceLine: () => <div data-testid="reference-line" />,
+}));
+
+// Mock heavy child components that aren't under test
+vi.mock('@/components/EngineSchematic', () => ({
+  EngineSchematic: () => <div data-testid="engine-schematic" />,
+}));
+
+vi.mock('@/components/visualizations/PredictionComparison', () => ({
+  PredictionComparison: () => <div data-testid="prediction-comparison" />,
+}));
+
+vi.mock('@/components/visualizations/ConfidenceBandChart', () => ({
+  ConfidenceBandChart: () => <div data-testid="confidence-band-chart" />,
+}));
+
+vi.mock('@/components/visualizations/KalmanGainIndicator', () => ({
+  KalmanGainIndicator: () => <div data-testid="kalman-gain-indicator" />,
+}));
+
+vi.mock('@/components/visualizations/InnovationMeter', () => ({
+  InnovationMeter: () => <div data-testid="innovation-meter" />,
+}));
+
+vi.mock('@/components/visualizations/FaultInjectionPanel', () => ({
+  FaultInjectionPanel: () => <div data-testid="fault-injection-panel" />,
+}));
+
+vi.mock('@/components/visualizations/WhatIfStressSlider', () => ({
+  WhatIfStressSlider: () => <div data-testid="what-if-stress-slider" />,
+}));
+
+vi.mock('@/components/visualizations/MonteCarloFanChart', () => ({
+  MonteCarloFanChart: () => <div data-testid="monte-carlo-fan-chart" />,
 }));
 
 // Import the component after mocks are set up
@@ -67,102 +132,123 @@ describe('Engine Dashboard', () => {
   });
 
   describe('RUL Indicator (Requirement 6.1)', () => {
-    it('displays the RUL value and "cycles remaining" text', () => {
-      useStore.setState({
-        engines: { 1: createEngineState({ rul: 80 }) },
-      });
-
-      render(<EngineDashboardPage />);
-
-      expect(screen.getByTestId('rul-value')).toHaveTextContent('80');
-      expect(screen.getByText('cycles remaining')).toBeInTheDocument();
-    });
-
-    it('displays default RUL of 125 when no engine data exists', () => {
-      render(<EngineDashboardPage />);
-
-      expect(screen.getByTestId('rul-value')).toHaveTextContent('125');
-    });
-  });
-
-  describe('Critical RUL Emphasis (Requirement 6.4)', () => {
-    it('applies critical styling when RUL < 30', () => {
+    it('displays the RUL value and "cycles remaining" text when RUL is critical', () => {
+      // The page passes rul to RULCountdown only when isCriticalRUL (rul < 30)
       useStore.setState({
         engines: { 1: createEngineState({ rul: 15 }) },
       });
 
       render(<EngineDashboardPage />);
 
-      const rulValue = screen.getByTestId('rul-value');
-      expect(rulValue).toHaveTextContent('15');
-      // Critical RUL uses text-7xl and text-destructive classes
-      expect(rulValue.className).toContain('text-7xl');
-      expect(rulValue.className).toContain('text-destructive');
+      // RULCountdown renders the value in a motion.p (mocked as data-testid="rul-countdown-value")
+      expect(screen.getByTestId('rul-countdown-value')).toHaveTextContent('15');
+      expect(screen.getByText('cycles remaining')).toBeInTheDocument();
     });
 
-    it('applies critical styling at the boundary (RUL = 29)', () => {
+    it('displays awaiting data state when RUL >= 30 (no simulation result)', () => {
+      // When rul >= 30 and no simulation result, page passes expectedRul=null
+      // RULCountdown shows "--" and "Awaiting data"
+      useStore.setState({
+        engines: { 1: createEngineState({ rul: 80 }) },
+      });
+
+      render(<EngineDashboardPage />);
+
+      expect(screen.getByText('--')).toBeInTheDocument();
+      expect(screen.getByText('Awaiting data')).toBeInTheDocument();
+    });
+  });
+
+  describe('Critical RUL Emphasis (Requirement 6.4)', () => {
+    it('applies red color class when RUL < 20', () => {
+      useStore.setState({
+        engines: { 1: createEngineState({ rul: 15 }) },
+      });
+
+      render(<EngineDashboardPage />);
+
+      const rulValue = screen.getByTestId('rul-countdown-value');
+      expect(rulValue).toHaveTextContent('15');
+      // RULCountdown uses text-red-500 for rul < 20
+      expect(rulValue.className).toContain('text-red-500');
+    });
+
+    it('applies amber color class when RUL is between 20 and 40', () => {
+      useStore.setState({
+        engines: { 1: createEngineState({ rul: 25 }) },
+      });
+
+      render(<EngineDashboardPage />);
+
+      const rulValue = screen.getByTestId('rul-countdown-value');
+      expect(rulValue).toHaveTextContent('25');
+      // RULCountdown uses text-amber-500 for 20 <= rul <= 40
+      expect(rulValue.className).toContain('text-amber-500');
+    });
+
+    it('applies amber color at boundary (RUL = 29)', () => {
       useStore.setState({
         engines: { 1: createEngineState({ rul: 29 }) },
       });
 
       render(<EngineDashboardPage />);
 
-      const rulValue = screen.getByTestId('rul-value');
-      expect(rulValue.className).toContain('text-7xl');
-      expect(rulValue.className).toContain('text-destructive');
+      const rulValue = screen.getByTestId('rul-countdown-value');
+      expect(rulValue).toHaveTextContent('29');
+      // 20 <= 29 <= 40 → amber
+      expect(rulValue.className).toContain('text-amber-500');
     });
 
-    it('applies normal styling when RUL >= 30', () => {
+    it('shows awaiting data state when RUL >= 30 (no simulation active)', () => {
+      // When rul >= 30 and no simulation, expectedRul is null → shows "--"
       useStore.setState({
         engines: { 1: createEngineState({ rul: 30 }) },
       });
 
       render(<EngineDashboardPage />);
 
-      const rulValue = screen.getByTestId('rul-value');
-      expect(rulValue.className).toContain('text-5xl');
-      expect(rulValue.className).not.toContain('text-destructive');
+      expect(screen.getByText('--')).toBeInTheDocument();
     });
 
-    it('applies normal styling when RUL is high (100)', () => {
+    it('shows awaiting data state when RUL is high (100)', () => {
+      // Same as above: rul >= 30, no simulation → null → "--"
       useStore.setState({
         engines: { 1: createEngineState({ rul: 100 }) },
       });
 
       render(<EngineDashboardPage />);
 
-      const rulValue = screen.getByTestId('rul-value');
-      expect(rulValue.className).toContain('text-5xl');
-      expect(rulValue.className).not.toContain('text-7xl');
+      expect(screen.getByText('--')).toBeInTheDocument();
     });
 
-    it('shows critical warning message when RUL < 30', () => {
+    it('shows red border glow when RUL < 20 (critical state)', () => {
       useStore.setState({
         engines: { 1: createEngineState({ rul: 10 }) },
       });
 
       render(<EngineDashboardPage />);
 
-      expect(
-        screen.getByText(/Critical — Immediate maintenance attention required/)
-      ).toBeInTheDocument();
+      const rulValue = screen.getByTestId('rul-countdown-value');
+      expect(rulValue).toHaveTextContent('10');
+      expect(rulValue.className).toContain('text-red-500');
     });
 
-    it('does not show critical warning when RUL >= 30', () => {
+    it('does not show RUL number when RUL >= 30 and no simulation result', () => {
       useStore.setState({
         engines: { 1: createEngineState({ rul: 50 }) },
       });
 
       render(<EngineDashboardPage />);
 
-      expect(
-        screen.queryByText(/Critical — Immediate maintenance attention required/)
-      ).not.toBeInTheDocument();
+      // With rul >= 30 and no simulation, expectedRul is null
+      // The component renders "--" instead of a number
+      expect(screen.getByText('--')).toBeInTheDocument();
+      expect(screen.queryByTestId('rul-countdown-value')).not.toBeInTheDocument();
     });
   });
 
   describe('Trajectory Chart Data Binding (Requirement 6.2)', () => {
-    it('renders the line chart with trajectory data', () => {
+    it('renders the degradation curve chart with trajectory data', () => {
       const trajectory = [
         { cycle: 1, healthIndex: 0.98 },
         { cycle: 2, healthIndex: 0.96 },
@@ -175,9 +261,15 @@ describe('Engine Dashboard', () => {
 
       render(<EngineDashboardPage />);
 
-      const chart = screen.getByTestId('line-chart');
+      // DegradationCurveProjection uses ComposedChart
+      const chart = screen.getByTestId('composed-chart');
       const dataPoints = JSON.parse(chart.getAttribute('data-points')!);
-      expect(dataPoints).toEqual(trajectory);
+      // Chart data is transformed: historical points have { cycle, historical, projected: null, confidenceBand: null }
+      expect(dataPoints).toHaveLength(3);
+      expect(dataPoints[0].cycle).toBe(1);
+      expect(dataPoints[0].historical).toBe(0.98);
+      expect(dataPoints[2].cycle).toBe(3);
+      expect(dataPoints[2].historical).toBe(0.94);
     });
 
     it('shows empty state message when no trajectory data exists', () => {

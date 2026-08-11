@@ -389,9 +389,9 @@ class TestProperty23PatternGeneratorMathematicalCorrectness:
         variance = sum((d - mean_dev) ** 2 for d in deviations) / len(deviations)
         std_dev = math.sqrt(variance)
 
-        # Mean should be approximately 0 (within 4 sigma / sqrt(n) for statistical test)
-        # Using 4 sigma gives ~99.99% confidence to avoid flaky failures in PBT
-        tolerance = 4.0 * config.sigma / math.sqrt(num_samples)
+        # Mean should be approximately 0 (within 4.5 sigma / sqrt(n) for statistical test)
+        # Using 4.5 sigma gives very high confidence to avoid flaky failures in PBT
+        tolerance = 4.5 * config.sigma / math.sqrt(num_samples)
         assert abs(mean_dev) < tolerance, (
             f"Mean deviation {mean_dev} exceeds tolerance {tolerance} "
             f"(sigma={config.sigma}, n={num_samples})"

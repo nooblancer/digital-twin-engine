@@ -44,6 +44,8 @@ _source_router = None
 _metrics_router = None
 _engines_router = None
 _correction_metrics_router = None
+_fault_injection_router = None
+_simulation_router = None
 
 
 def _get_health_router():
@@ -89,6 +91,24 @@ def _get_correction_metrics_router():
         from digital_twin_engine.api.correction_metrics_api import router as correction_metrics_router
         _correction_metrics_router = correction_metrics_router
     return _correction_metrics_router
+
+
+def _get_fault_injection_router():
+    """Lazily import the fault injection router to avoid circular imports."""
+    global _fault_injection_router
+    if _fault_injection_router is None:
+        from digital_twin_engine.api.fault_injection_api import router as fault_injection_router
+        _fault_injection_router = fault_injection_router
+    return _fault_injection_router
+
+
+def _get_simulation_router():
+    """Lazily import the simulation router to avoid circular imports."""
+    global _simulation_router
+    if _simulation_router is None:
+        from digital_twin_engine.api.simulation_api import router as simulation_router
+        _simulation_router = simulation_router
+    return _simulation_router
 
 
 class APIGateway:
@@ -171,6 +191,12 @@ class APIGateway:
 
         # Include correction metrics router (Requirements 3.4, 4.4, 5.6)
         app.include_router(_get_correction_metrics_router())
+
+        # Include fault injection router (Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 2.6)
+        app.include_router(_get_fault_injection_router())
+
+        # Include simulation router (Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7)
+        app.include_router(_get_simulation_router())
 
         @app.get(
             "/sensors/{sensor_id}/state/current",

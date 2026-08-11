@@ -28,9 +28,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import AsyncIterator, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, AsyncIterator, Dict, List, Optional, Tuple
 
 from digital_twin_engine.shared.models import TelemetryEvent
+
+if TYPE_CHECKING:
+    from digital_twin_engine.simulation.fault_injector import FaultInjector
 
 
 # Sensor names matching the 21 measurement channels in C-MAPSS
@@ -175,12 +178,13 @@ class CMAPSSReplayAdapter:
             print(event)
     """
 
-    def __init__(self, config: CMAPSSConfig) -> None:
+    def __init__(self, config: CMAPSSConfig, fault_injector: Optional["FaultInjector"] = None) -> None:
         self._config = config
         self._engines: Dict[int, EngineData] = {}
         self._loaded = False
         self._total_events_emitted = 0
         self._start_time: float = 0.0
+        self._fault_injector = fault_injector
 
     @property
     def config(self) -> CMAPSSConfig:
@@ -272,11 +276,19 @@ class CMAPSSReplayAdapter:
                 for sensor_name in sensor_list:
                     if sensor_name in cycle_data:
                         sensor_id = f"engine-{engine_id:03d}-{sensor_name}"
+                        raw_value = cycle_data[sensor_name]
+
+                        # Apply fault injection (if any active faults for this sensor)
+                        if self._fault_injector is not None:
+                            value = self._fault_injector.apply(sensor_id, raw_value)
+                        else:
+                            value = raw_value
+
                         event = TelemetryEvent(
                             timestamp=ts,
                             sensor_id=sensor_id,
                             measurement_type=sensor_name,
-                            value=cycle_data[sensor_name],
+                            value=value,
                         )
                         self._total_events_emitted += 1
                         yield event

@@ -31,6 +31,7 @@ if __name__ == "__main__" or os.environ.get("_ADAPTER_STDOUT_WRAP"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 from digital_twin_engine.adapters.cmapss_replay import CMAPSSConfig, CMAPSSReplayAdapter
+from digital_twin_engine.simulation.fault_injector import FaultInjector
 from digital_twin_engine.shared.models import (
     EngineConfig,
     TelemetryEvent,
@@ -38,6 +39,11 @@ from digital_twin_engine.shared.models import (
 )
 
 logger = logging.getLogger("digital_twin_engine.adapters")
+
+# Module-level FaultInjector singleton shared between the adapter and the API
+# router. The API uses this to inject/clear faults; the adapter applies them
+# on every sensor reading inside its stream() loop.
+fault_injector = FaultInjector()
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +102,7 @@ async def _stream_to_websocket(ws_url: str, config: CMAPSSConfig) -> None:
     """
     import websockets
 
-    adapter = CMAPSSReplayAdapter(config)
+    adapter = CMAPSSReplayAdapter(config, fault_injector=fault_injector)
     adapter.load()
 
     summary = adapter.summary()
@@ -184,7 +190,7 @@ async def run_docker_mode(base_url: str, config: CMAPSSConfig) -> None:
 
 async def run_standalone(config: CMAPSSConfig):
     """Run the adapter standalone, printing events to stdout."""
-    adapter = CMAPSSReplayAdapter(config)
+    adapter = CMAPSSReplayAdapter(config, fault_injector=fault_injector)
     adapter.load()
 
     summary = adapter.summary()

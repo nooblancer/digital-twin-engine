@@ -1,16 +1,8 @@
 'use client';
 
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
 import { useStore } from '@/store';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { EngineSchematic } from '@/components/EngineSchematic';
@@ -18,6 +10,12 @@ import { PredictionComparison } from '@/components/visualizations/PredictionComp
 import { ConfidenceBandChart } from '@/components/visualizations/ConfidenceBandChart';
 import { KalmanGainIndicator } from '@/components/visualizations/KalmanGainIndicator';
 import { InnovationMeter } from '@/components/visualizations/InnovationMeter';
+import { FaultInjectionPanel } from '@/components/visualizations/FaultInjectionPanel';
+import { WhatIfStressSlider } from '@/components/visualizations/WhatIfStressSlider';
+import { MonteCarloFanChart } from '@/components/visualizations/MonteCarloFanChart';
+import { DegradationCurveProjection } from '@/components/visualizations/DegradationCurveProjection';
+import { RULCountdown } from '@/components/visualizations/RULCountdown';
+import type { SimulationResult } from '@/types/simulation';
 
 export default function EngineDashboardPage() {
   // Subscribe to real-time WebSocket updates
@@ -41,9 +39,17 @@ export default function EngineDashboardPage() {
   const degradationRate = engine?.degradationRate ?? null;
   const subsystems = engine?.subsystems ?? [];
 
+  // Simulation state — WhatIfStressSlider sets this, distributed to child charts
+  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
+
+  const handleSimulationResult = useCallback((result: SimulationResult) => {
+    setSimulationResult(result);
+  }, []);
+
   function handleEngineChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const newId = Number(e.target.value);
     selectEngine(newId);
+    setSimulationResult(null); // Reset simulation when switching engines
     router.push(`/engine/${newId}`);
   }
 
@@ -97,48 +103,42 @@ export default function EngineDashboardPage() {
           </div>
         </div>
 
-        {/* RUL Indicator */}
-        <section
-          aria-label="Remaining Useful Life"
-          className={`rounded-lg border p-8 text-center ${
-            isCriticalRUL
-              ? 'border-destructive bg-destructive/10'
-              : 'border-border bg-card'
-          }`}
-        >
-          <p className="text-sm uppercase tracking-wider text-muted-foreground mb-2">
-            Remaining Useful Life
-          </p>
-          <p
-            data-testid="rul-value"
-            className={`font-bold tabular-nums ${
-              isCriticalRUL
-                ? 'text-7xl text-destructive'
-                : 'text-5xl text-foreground'
-            }`}
-          >
-            {rul}
-          </p>
-          <p
-            className={`mt-1 ${
-              isCriticalRUL
-                ? 'text-lg text-destructive font-medium'
-                : 'text-sm text-muted-foreground'
-            }`}
-          >
-            cycles remaining
-          </p>
-          {isCriticalRUL && (
-            <p className="mt-3 text-sm text-destructive font-medium">
-              ⚠ Critical — Immediate maintenance attention required
-            </p>
-          )}
+        {/* RUL Countdown — Prominent placement near health index */}
+        <RULCountdown
+          expectedRul={simulationResult?.expected_rul ?? (isCriticalRUL ? rul : null)}
+          confidenceInterval90={simulationResult?.confidence_interval_90 ?? null}
+        />
+
+        {/* Fault Injection Panel — Collapsible sidebar section */}
+        <details className="rounded-lg border border-border bg-card">
+          <summary className="px-6 py-4 cursor-pointer text-lg font-medium hover:text-cyan-400 transition-colors">
+            Fault Injection Controls
+          </summary>
+          <div className="px-6 pb-6">
+            <FaultInjectionPanel />
+          </div>
+        </details>
+
+        {/* What-If Stress Slider — Above projection charts */}
+        <section className="rounded-lg border border-border bg-card p-6">
+          <WhatIfStressSlider
+            engineId={engineId}
+            onSimulationResult={handleSimulationResult}
+          />
         </section>
 
-        {/* Health Trajectory Chart */}
+        {/* Monte Carlo Fan Chart — New visualization card */}
+        <section className="rounded-lg border border-border bg-card p-6">
+          <h2 className="text-lg font-medium mb-4">Monte Carlo Projection</h2>
+          <MonteCarloFanChart
+            percentiles={simulationResult?.percentiles ?? null}
+          />
+        </section>
+
+        {/* Degradation Curve with Future Projection — Replaces basic trajectory chart */}
         <section className="rounded-lg border border-border bg-card p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-medium">Health Index Trajectory</h2>
+            <h2 className="text-lg font-medium">Degradation Curve &amp; Projection</h2>
             {degradationRate !== null && (
               <div className="text-sm text-muted-foreground">
                 Degradation rate:{' '}
@@ -161,68 +161,10 @@ export default function EngineDashboardPage() {
               </p>
             )}
           </div>
-
-          {trajectory.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart
-                data={trajectory}
-                margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
-              >
-                <CartesianGrid
-                  stroke="hsl(220, 10%, 20%)"
-                  strokeDasharray="3 3"
-                />
-                <XAxis
-                  dataKey="cycle"
-                  label={{
-                    value: 'Cycle',
-                    position: 'insideBottom',
-                    offset: -4,
-                    style: { fill: 'hsl(215, 12%, 58%)', fontSize: 12 },
-                  }}
-                  stroke="hsl(215, 12%, 58%)"
-                  tick={{ fontSize: 11 }}
-                />
-                <YAxis
-                  domain={[0, 1]}
-                  label={{
-                    value: 'Health Index',
-                    angle: -90,
-                    position: 'insideLeft',
-                    style: { fill: 'hsl(215, 12%, 58%)', fontSize: 12 },
-                  }}
-                  stroke="hsl(215, 12%, 58%)"
-                  tick={{ fontSize: 11 }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'hsl(220, 13%, 9%)',
-                    border: '1px solid hsl(220, 12%, 18%)',
-                    borderRadius: '6px',
-                    color: 'hsl(210, 20%, 92%)',
-                  }}
-                  formatter={(value) => [
-                    Number(value).toFixed(4),
-                    'Health Index',
-                  ]}
-                  labelFormatter={(label) => `Cycle ${label}`}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="healthIndex"
-                  name="Health Index"
-                  stroke="hsl(192, 45%, 55%)"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
-              No trajectory data available yet. Waiting for health updates...
-            </div>
-          )}
+          <DegradationCurveProjection
+            historicalData={trajectory}
+            projectionPercentiles={simulationResult?.percentiles ?? null}
+          />
         </section>
 
         {/* Engine Schematic View */}

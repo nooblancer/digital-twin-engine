@@ -36,3 +36,11 @@ export type {
   CorrectionMetricsActions,
   ExtendedCorrectionPayload,
 } from './correction-metrics';
+
+export type {
+  SimulationResult,
+  ActiveFault,
+  MaintenanceImpactResult,
+  FailureProbabilityResult,
+  InjectFaultParams,
+} from './simulation';

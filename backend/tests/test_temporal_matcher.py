@@ -194,6 +194,9 @@ class TestTemporalMatching:
         obs_msg = make_observation_message(sensor_id, obs_ts, value=101.0)
         await broker.deliver(TELEMETRY_RAW, sensor_id, obs_msg)
 
+        # Allow fire-and-forget create_task match callbacks to complete
+        await asyncio.sleep(0)
+
         assert len(match_results) == 1
         pair, state = match_results[0]
         assert pair.sensor_id == sensor_id
@@ -223,6 +226,9 @@ class TestTemporalMatching:
         pred_ts = now + timedelta(seconds=0.8)
         pred_msg = make_prediction_message(sensor_id, pred_ts, values=[49.5])
         await broker.deliver(PREDICTIONS_STATE, sensor_id, pred_msg)
+
+        # Allow fire-and-forget create_task match callbacks to complete
+        await asyncio.sleep(0)
 
         assert len(match_results) == 1
         pair, _ = match_results[0]
@@ -308,6 +314,9 @@ class TestTemporalMatching:
         obs_msg = make_observation_message(sensor_id, obs_ts, value=200.0)
         await broker.deliver(TELEMETRY_RAW, sensor_id, obs_msg)
 
+        # Allow fire-and-forget create_task match callbacks to complete
+        await asyncio.sleep(0)
+
         assert len(match_results) == 1
 
         await matcher.stop()
@@ -336,6 +345,9 @@ class TestTemporalMatching:
         # Prediction at time T (closest to obs1 at T+0.3)
         pred_msg = make_prediction_message(sensor_id, now, values=[9.5])
         await broker.deliver(PREDICTIONS_STATE, sensor_id, pred_msg)
+
+        # Allow fire-and-forget create_task match callbacks to complete
+        await asyncio.sleep(0)
 
         assert len(match_results) == 1
         pair, _ = match_results[0]
@@ -530,6 +542,9 @@ class TestTimeoutDiscard:
 
         obs_msg = make_observation_message(sensor_id, now, value=100.0)
         await broker.deliver(TELEMETRY_RAW, sensor_id, obs_msg)
+
+        # Allow fire-and-forget create_task match callbacks to complete
+        await asyncio.sleep(0)
 
         # Verify match occurred and pending lists are empty
         assert len(match_results) == 1
