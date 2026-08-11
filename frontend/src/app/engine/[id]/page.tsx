@@ -14,6 +14,10 @@ import {
 import { useStore } from '@/store';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { EngineSchematic } from '@/components/EngineSchematic';
+import { PredictionComparison } from '@/components/visualizations/PredictionComparison';
+import { ConfidenceBandChart } from '@/components/visualizations/ConfidenceBandChart';
+import { KalmanGainIndicator } from '@/components/visualizations/KalmanGainIndicator';
+import { InnovationMeter } from '@/components/visualizations/InnovationMeter';
 
 export default function EngineDashboardPage() {
   // Subscribe to real-time WebSocket updates
@@ -226,7 +230,78 @@ export default function EngineDashboardPage() {
           <h2 className="text-lg font-medium mb-4">Engine Subsystem Health</h2>
           <EngineSchematic subsystems={subsystems} />
         </section>
+
+        {/* EnKF Correction Analysis (v1.2) */}
+        <CorrectionAnalysisSection engineId={engineId} />
       </div>
     </main>
+  );
+}
+
+function CorrectionAnalysisSection({ engineId }: { engineId: number }) {
+  const correctionHistory = useStore((state) => state.correctionHistory);
+
+  // Find sensors belonging to this engine (pattern: engine-00X-sensor_name)
+  const enginePrefix = `engine-${String(engineId).padStart(3, '0')}-`;
+  const engineSensorIds = Object.keys(correctionHistory).filter((id) =>
+    id.startsWith(enginePrefix)
+  );
+
+  // Pick the first sensor with data for the detailed charts
+  const activeSensorId = engineSensorIds[0] ?? null;
+
+  if (!activeSensorId) {
+    return (
+      <section className="rounded-lg border border-border bg-card p-6">
+        <h2 className="text-lg font-medium mb-4">EnKF Correction Analysis</h2>
+        <p className="text-sm text-muted-foreground">
+          Waiting for correction data from Engine {engineId}...
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-lg border border-border bg-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-medium">EnKF Correction Analysis</h2>
+          <span className="text-xs text-muted-foreground font-mono">
+            {activeSensorId}
+          </span>
+        </div>
+
+        {/* Prediction vs Reality Overlay */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-muted-foreground mb-2">
+            Prediction vs Reality
+          </h3>
+          <PredictionComparison sensorId={activeSensorId} />
+        </div>
+
+        {/* Confidence Bands */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-muted-foreground mb-2">
+            Confidence Bands (50% / 75% / 95%)
+          </h3>
+          <ConfidenceBandChart sensorId={activeSensorId} />
+        </div>
+
+        {/* Kalman Gain + Innovation side by side */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <KalmanGainIndicator sensorId={activeSensorId} />
+          <div className="rounded-lg border border-white/[0.06] bg-[#12141a] p-4">
+            <InnovationMeter sensorId={activeSensorId} />
+          </div>
+        </div>
+      </div>
+
+      {/* Sensor selector for this engine */}
+      {engineSensorIds.length > 1 && (
+        <p className="text-xs text-muted-foreground text-center">
+          Showing {activeSensorId.replace(enginePrefix, '')} — {engineSensorIds.length} sensors tracked for this engine
+        </p>
+      )}
+    </section>
   );
 }

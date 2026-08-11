@@ -43,6 +43,7 @@ _health_router = None
 _source_router = None
 _metrics_router = None
 _engines_router = None
+_correction_metrics_router = None
 
 
 def _get_health_router():
@@ -79,6 +80,15 @@ def _get_engines_router():
         from digital_twin_engine.api.engines import router as engines_router
         _engines_router = engines_router
     return _engines_router
+
+
+def _get_correction_metrics_router():
+    """Lazily import the correction metrics router to avoid circular imports."""
+    global _correction_metrics_router
+    if _correction_metrics_router is None:
+        from digital_twin_engine.api.correction_metrics_api import router as correction_metrics_router
+        _correction_metrics_router = correction_metrics_router
+    return _correction_metrics_router
 
 
 class APIGateway:
@@ -158,6 +168,9 @@ class APIGateway:
 
         # Include engines router (Requirements 8.5)
         app.include_router(_get_engines_router())
+
+        # Include correction metrics router (Requirements 3.4, 4.4, 5.6)
+        app.include_router(_get_correction_metrics_router())
 
         @app.get(
             "/sensors/{sensor_id}/state/current",
