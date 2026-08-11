@@ -1,0 +1,40 @@
+# Lightweight Dockerfile for Render.com free tier deployment.
+# Runs in local mode with in-memory backends (no Kafka/Redis/InfluxDB).
+# Uses CPU-only torch or stubs to fit within 512MB RAM.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml ./
+COPY src/ ./src/
+COPY run_local.py ./
+COPY data/ ./data/
+
+# Install with CPU-only torch (much smaller) and skip unnecessary deps
+RUN pip install --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    . \
+    && rm -rf /root/.cache/pip
+
+# Environment
+ENV RUN_MODE=local
+ENV LOG_LEVEL=WARNING
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
+
+# Render uses PORT env var
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+
+# Run in local mode on Render's PORT
+CMD ["python", "run_local.py"]

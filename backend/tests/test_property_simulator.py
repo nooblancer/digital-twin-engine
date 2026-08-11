@@ -489,9 +489,14 @@ class TestProperty23PatternGeneratorMathematicalCorrectness:
             )
         else:
             # Step must be bounded by [-max_step, +max_step]
-            assert -config.max_step <= step <= config.max_step, (
+            # Allow small floating-point tolerance: when previous_value is
+            # much larger than max_step, (previous + step) - previous may
+            # differ from step due to catastrophic cancellation.
+            tol = max(abs(previous_value), 1.0) * 1e-10
+            bound = config.max_step + tol
+            assert -bound <= step <= bound, (
                 f"Step {step} exceeds bounds ±{config.max_step} "
-                f"(value={value}, previous={previous_value})"
+                f"(value={value}, previous={previous_value}, tol={tol})"
             )
 
     @given(

@@ -134,6 +134,20 @@ async def run_local() -> None:
     # --- Create API Gateway ---
     gateway = APIGateway(tsdb_backend=tsdb)
 
+    # --- Register health checks for Local Mode ---
+    # In Local Mode all components are in-process; report HEALTHY when running.
+    # Registered immediately after gateway creation so _health_checks dict is
+    # populated before any TCP connection can trigger a /health request.
+    async def _healthy() -> ComponentStatus:
+        return ComponentStatus.HEALTHY
+
+    register_health_check("ingestion_server", _healthy)
+    register_health_check("message_broker", _healthy)
+    register_health_check("tsdb", _healthy)
+    register_health_check("tsdb_writer", _healthy)
+    register_health_check("ml_service", _healthy)
+    register_health_check("correction_engine", _healthy)
+
     # --- Create Broker Subscriber (feeds state cache + WebSocket broadcasts) ---
     subscriber = BrokerSubscriber()
     await subscriber.start(broker, gateway.state_cache, gateway.ws_manager, gateway.predictions_cache)
@@ -196,18 +210,6 @@ async def run_local() -> None:
         component_health_mapper=component_health_mapper,
         degradation_tracker=degradation_tracker,
     )
-
-    # --- Register health checks for Local Mode ---
-    # In Local Mode all components are in-process; report HEALTHY when running.
-    async def _healthy() -> ComponentStatus:
-        return ComponentStatus.HEALTHY
-
-    register_health_check("ingestion_server", _healthy)
-    register_health_check("message_broker", _healthy)
-    register_health_check("tsdb", _healthy)
-    register_health_check("tsdb_writer", _healthy)
-    register_health_check("ml_service", _healthy)
-    register_health_check("correction_engine", _healthy)
 
     # --- C-MAPSS Replay Adapter ---
     async def run_adapter() -> None:

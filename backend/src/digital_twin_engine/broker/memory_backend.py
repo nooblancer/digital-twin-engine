@@ -17,8 +17,11 @@ class InMemoryBrokerBackend(BrokerBackend):
     """In-memory message broker for Local Mode and testing.
 
     Implements the full BrokerBackend interface without external dependencies.
-    Messages published to a topic are delivered to subscribers via asyncio
-    tasks, preventing event loop starvation during heavy processing.
+    Messages published to a topic are delivered to subscribers inline (awaited
+    directly) to prevent unbounded asyncio task accumulation. The event loop
+    remains responsive because the C-MAPSS adapter yields via asyncio.sleep()
+    between cycles, and the EnKF semaphore ensures compute-heavy work is
+    serialized through asyncio.to_thread with bounded concurrency.
 
     Attributes:
         _subscribers: Mapping of topic names to lists of (group_id, callback)
@@ -29,7 +32,6 @@ class InMemoryBrokerBackend(BrokerBackend):
     def __init__(self) -> None:
         self._subscribers: dict[str, list[tuple[str, MessageCallback]]] = {}
         self._running: bool = False
-        self._pending_tasks: set[asyncio.Task] = set()
 
     async def start(self) -> None:
         """Initialize the in-memory broker for operation.
@@ -45,16 +47,16 @@ class InMemoryBrokerBackend(BrokerBackend):
         """
         self._running = False
         self._subscribers.clear()
-        # Cancel pending delivery tasks
-        for task in self._pending_tasks:
-            task.cancel()
-        self._pending_tasks.clear()
 
     async def publish(self, topic: str, key: str, message: bytes) -> None:
         """Publish a message to the specified topic.
 
-        Schedules subscriber callbacks as asyncio tasks so they don't block
-        the publishing coroutine or starve the event loop.
+        Delivers to all subscribers inline (awaited directly). This provides
+        natural backpressure and zero task accumulation. The EnKF's
+        asyncio.to_thread() call ensures the event loop is released during
+        heavy numpy computation, keeping HTTP/WebSocket responsive. The
+        semaphore(_MAX_CONCURRENT_COMPUTE=1) ensures only one EnKF computation
+        runs at a time, so await chains resolve quickly.
 
         Args:
             topic: The target topic name.
@@ -63,9 +65,7 @@ class InMemoryBrokerBackend(BrokerBackend):
         """
         subscribers = self._subscribers.get(topic, [])
         for _group_id, callback in subscribers:
-            task = asyncio.create_task(callback(topic, key, message))
-            self._pending_tasks.add(task)
-            task.add_done_callback(self._pending_tasks.discard)
+            await callback(topic, key, message)
 
     async def subscribe(
         self, topic: str, group_id: str, callback: MessageCallback

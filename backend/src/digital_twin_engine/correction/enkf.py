@@ -19,6 +19,7 @@ Requirements: 6.3, 6.4, 6.5, 6.6
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from dataclasses import dataclass
@@ -80,6 +81,15 @@ class EnKFIteration:
             Signature: async (StateVector) -> None
     """
 
+    # Maximum concurrent EnKF computations offloaded to the thread pool.
+    # With 63 sensors potentially firing at once, limiting to 1 concurrent
+    # computation ensures the thread pool never saturates and pending asyncio
+    # tasks stay bounded. Each computation takes 1-5ms on modern hardware,
+    # giving throughput of 200-1000 computations/sec — more than enough for
+    # 63 events/sec. The semaphore ensures orderly processing without
+    # overwhelming the event loop scheduler with hundreds of waiting tasks.
+    _MAX_CONCURRENT_COMPUTE = 1
+
     def __init__(
         self,
         broker: BrokerBackend,
@@ -87,6 +97,7 @@ class EnKFIteration:
     ) -> None:
         self._broker = broker
         self._tsdb_write_func = tsdb_write_func
+        self._compute_semaphore = asyncio.Semaphore(self._MAX_CONCURRENT_COMPUTE)
 
         # Metrics
         self._iterations_count: int = 0
@@ -121,7 +132,8 @@ class EnKFIteration:
         """
         start_time = time.perf_counter()
 
-        update_result = self._compute_enkf_update(matched_pair, enkf_state)
+        async with self._compute_semaphore:
+            update_result = await asyncio.to_thread(self._compute_enkf_update, matched_pair, enkf_state)
         result = update_result.state_vector
 
         # Publish corrected state

@@ -147,7 +147,7 @@ class APIGateway:
 
         # CORS middleware configuration (Requirements 3.1, 3.2, 3.3, 3.4)
         cors_origins = os.environ.get(
-            "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
+            "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:3001"
         ).split(",")
         app.add_middleware(
             CORSMiddleware,
