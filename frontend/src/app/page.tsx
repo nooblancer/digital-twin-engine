@@ -148,7 +148,7 @@ function Hero() {
         >
           <motion.div variants={fadeUp} className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border/60 bg-card/50 text-xs text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-            v0.1 — Real-time pipeline operational
+            v1.2 — Real-time pipeline operational
           </motion.div>
 
           <motion.h1

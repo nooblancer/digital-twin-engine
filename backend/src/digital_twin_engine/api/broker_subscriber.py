@@ -241,6 +241,11 @@ class BrokerSubscriber:
                 "values": payload.get("corrected_state_vector", payload.get("values", [])),
                 "ensemble_spread": payload.get("ensemble_spread", 0.0),
                 "anomaly_flag": payload.get("anomaly_flag", False),
+                # NEW v1.2 fields — .get() with no default returns None for older messages
+                "kalman_gain": payload.get("kalman_gain"),
+                "innovation_magnitude": payload.get("innovation_magnitude"),
+                "confidence_band_95": payload.get("confidence_band_95"),
+                "raw_prediction": payload.get("raw_prediction"),
             }
         elif topic == PREDICTIONS_STATE:
             # Backend: {sensor_id, prediction_timestamp, prediction_horizon_seconds, values, ensemble_spread}

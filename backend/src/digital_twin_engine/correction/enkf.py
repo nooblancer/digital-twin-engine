@@ -19,6 +19,7 @@ Requirements: 6.3, 6.4, 6.5, 6.6
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from dataclasses import dataclass
@@ -30,6 +31,10 @@ from numpy.linalg import LinAlgError
 
 from digital_twin_engine.broker.base import BrokerBackend
 from digital_twin_engine.broker.topics import ALERTS_ANOMALY, CORRECTIONS_STATE
+from digital_twin_engine.correction.correction_metrics_tracker import (
+    CorrectionMetricsTracker,
+    InnovationStatsTracker,
+)
 from digital_twin_engine.correction.temporal_matcher import MatchedPair
 from digital_twin_engine.shared.logging import get_logger
 from digital_twin_engine.shared.models import EnKFState, StateVector
@@ -42,6 +47,11 @@ _MIN_ENSEMBLE_SPREAD = 1e-10
 # Re-inflation noise standard deviation
 _REINFLATION_NOISE_STD = 0.01
 
+# Module-level singleton trackers for correction metrics observability (v1.2)
+# These are accessed by the REST API endpoints in correction_metrics_api.py
+accuracy_tracker = CorrectionMetricsTracker()
+innovation_tracker = InnovationStatsTracker()
+
 
 @dataclass
 class EnKFUpdateResult:
@@ -50,6 +60,12 @@ class EnKFUpdateResult:
     state_vector: StateVector
     innovation_magnitude: float
     predicted_value: float  # First element of predicted state (observation space)
+    kalman_gain_scalar: float = 0.0  # K[0,0] clipped to [0, 1] (v1.2)
+    confidence_band_95: list = None  # [lower, upper] 95% CI (v1.2)
+
+    def __post_init__(self):
+        if self.confidence_band_95 is None:
+            self.confidence_band_95 = [0.0, 0.0]
 
 
 class EnKFIteration:
@@ -65,6 +81,15 @@ class EnKFIteration:
             Signature: async (StateVector) -> None
     """
 
+    # Maximum concurrent EnKF computations offloaded to the thread pool.
+    # With 63 sensors potentially firing at once, limiting to 1 concurrent
+    # computation ensures the thread pool never saturates and pending asyncio
+    # tasks stay bounded. Each computation takes 1-5ms on modern hardware,
+    # giving throughput of 200-1000 computations/sec — more than enough for
+    # 63 events/sec. The semaphore ensures orderly processing without
+    # overwhelming the event loop scheduler with hundreds of waiting tasks.
+    _MAX_CONCURRENT_COMPUTE = 1
+
     def __init__(
         self,
         broker: BrokerBackend,
@@ -72,6 +97,7 @@ class EnKFIteration:
     ) -> None:
         self._broker = broker
         self._tsdb_write_func = tsdb_write_func
+        self._compute_semaphore = asyncio.Semaphore(self._MAX_CONCURRENT_COMPUTE)
 
         # Metrics
         self._iterations_count: int = 0
@@ -106,11 +132,34 @@ class EnKFIteration:
         """
         start_time = time.perf_counter()
 
-        update_result = self._compute_enkf_update(matched_pair, enkf_state)
+        async with self._compute_semaphore:
+            update_result = await asyncio.to_thread(self._compute_enkf_update, matched_pair, enkf_state)
         result = update_result.state_vector
 
         # Publish corrected state
-        await self._publish_corrected_state(result, matched_pair, enkf_state)
+        await self._publish_corrected_state(
+            result,
+            matched_pair,
+            enkf_state,
+            update_result=update_result,
+            kalman_gain_scalar=update_result.kalman_gain_scalar,
+            confidence_band_95=update_result.confidence_band_95,
+        )
+
+        # Record correction metrics for accuracy tracking (v1.2)
+        # Uses: matched_pair.observed_value, update_result.predicted_value, corrected_mean[0]
+        accuracy_tracker.record(
+            sensor_id=matched_pair.sensor_id,
+            raw_prediction=update_result.predicted_value,
+            observed_value=matched_pair.observed_value,
+            corrected_value=result.values[0],
+        )
+
+        # Record innovation magnitude for whiteness testing (v1.2)
+        innovation_tracker.record(
+            sensor_id=matched_pair.sensor_id,
+            innovation_magnitude=update_result.innovation_magnitude,
+        )
 
         # Emit anomaly event if flagged
         if result.anomaly_flag:
@@ -255,6 +304,11 @@ class EnKFIteration:
 
         K = P_f @ H.T @ S_inv  # Kalman Gain: (d, obs_dim)
 
+        # Extract scalar Kalman Gain for primary state variable (v1.2)
+        # K[0,0] is the trust ratio: 1.0 = fully trusting sensor, 0.0 = fully trusting model
+        # Clip to [0, 1] because degenerate numerical cases (near-singular S) could exceed bounds
+        kalman_gain_scalar = float(np.clip(K[0, 0], 0.0, 1.0))
+
         # --- Step 7: Update each ensemble member ---
         # y_obs: scalar observation
         y_obs = np.array([[matched_pair.observed_value]], dtype=np.float64)  # (obs_dim, 1)
@@ -290,6 +344,13 @@ class EnKFIteration:
         corrected_mean = np.mean(X_a, axis=0)  # Shape: (d,)
         corrected_spread = float(np.std(X_a, axis=0).mean())
 
+        # Compute 95% confidence band for primary state variable (v1.2)
+        ensemble_std = float(np.std(X_a[:, 0]))  # std of first state dimension across ensemble
+        confidence_band_95 = [
+            float(corrected_mean[0] - 1.96 * ensemble_std),
+            float(corrected_mean[0] + 1.96 * ensemble_std),
+        ]
+
         # --- Step 9: Update EnKF state in-place ---
         enkf_state.ensemble_members = X_a
         enkf_state.last_update_timestamp = datetime.now(timezone.utc)
@@ -313,6 +374,8 @@ class EnKFIteration:
             state_vector=corrected_state,
             innovation_magnitude=innovation_magnitude,
             predicted_value=predicted_value_obs,
+            kalman_gain_scalar=kalman_gain_scalar,
+            confidence_band_95=confidence_band_95,
         )
 
     async def _publish_corrected_state(
@@ -320,6 +383,9 @@ class EnKFIteration:
         state: StateVector,
         matched_pair: MatchedPair,
         enkf_state: EnKFState,
+        update_result: EnKFUpdateResult,
+        kalman_gain_scalar: float,
+        confidence_band_95: list[float],
     ) -> None:
         """Publish corrected state to the corrections.state broker topic.
 
@@ -329,12 +395,17 @@ class EnKFIteration:
             "correction_timestamp": "...",
             "corrected_state_vector": [...],
             "ensemble_spread": 0.45,
-            "innovation_magnitude": 1.2,
             "anomaly_flag": false,
-            "iteration_latency_ms": 42
+            "iteration_count": 42,
+            "source": "correction",
+            "kalman_gain": 0.42,
+            "innovation_magnitude": 1.23,
+            "confidence_band_95": [510.1, 514.5],
+            "raw_prediction": 515.7
         }
         """
         message = {
+            # Existing fields (backward compatible)
             "sensor_id": state.sensor_id,
             "correction_timestamp": state.timestamp.isoformat(),
             "corrected_state_vector": state.values,
@@ -342,6 +413,11 @@ class EnKFIteration:
             "anomaly_flag": state.anomaly_flag,
             "iteration_count": enkf_state.iteration_count,
             "source": "correction",
+            # NEW fields for v1.2
+            "kalman_gain": kalman_gain_scalar,
+            "innovation_magnitude": update_result.innovation_magnitude,
+            "confidence_band_95": confidence_band_95,
+            "raw_prediction": update_result.predicted_value,
         }
 
         payload = json.dumps(message).encode("utf-8")

@@ -29,3 +29,10 @@ export type { AnomalyAlert } from './anomaly';
 export type { HistoryQueryParams, PredictionEntry } from './history';
 
 export type { ConnectionStatus, ConnectionState } from './connection';
+
+export type {
+  CorrectionDataPoint,
+  CorrectionMetricsState,
+  CorrectionMetricsActions,
+  ExtendedCorrectionPayload,
+} from './correction-metrics';

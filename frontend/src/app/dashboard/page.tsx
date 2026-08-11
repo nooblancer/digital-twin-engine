@@ -9,6 +9,9 @@ import { SensorHealthCards } from '@/components/SensorHealthCards';
 import { PipelineHealthMonitor } from '@/components/PipelineHealthMonitor';
 import { HistoricalTrendExplorer } from '@/components/HistoricalTrendExplorer';
 import { PredictionHorizonView } from '@/components/PredictionHorizonView';
+import { AccuracyScoreboard } from '@/components/visualizations/AccuracyScoreboard';
+import { KalmanGainIndicator } from '@/components/visualizations/KalmanGainIndicator';
+import { InnovationMeter } from '@/components/visualizations/InnovationMeter';
 import type { ConnectionStatus } from '@/types';
 
 const STATUS_DOT_COLOR: Record<ConnectionStatus, string> = {
@@ -125,6 +128,19 @@ export default function DashboardPage() {
           {/* Pipeline Health Monitor */}
           <section aria-label="Pipeline Health">
             <PipelineHealthMonitor />
+          </section>
+
+          {/* EnKF Correction Metrics (v1.2) */}
+          <section aria-label="Correction Metrics">
+            <AccuracyScoreboard />
+            {firstSensorId && (
+              <div className="mt-3 space-y-3">
+                <KalmanGainIndicator sensorId={firstSensorId} />
+                <div className="rounded-lg border border-white/[0.06] bg-[#12141a] p-4">
+                  <InnovationMeter sensorId={firstSensorId} />
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Prediction Horizon View */}

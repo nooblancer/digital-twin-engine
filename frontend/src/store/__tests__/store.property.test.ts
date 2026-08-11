@@ -12,12 +12,9 @@ import type { CorrectionPayload } from '@/types';
 
 // --- Arbitraries ---
 
-const chartDataPointArb: fc.Arbitrary<ChartDataPoint> = fc.record({
-  timestamp: fc.nat({ max: 2_000_000_000_000 }),
-  raw: fc.option(fc.double({ min: -1000, max: 1000, noNaN: true }), { nil: undefined }),
-  predicted: fc.option(fc.double({ min: -1000, max: 1000, noNaN: true }), { nil: undefined }),
-  corrected: fc.option(fc.double({ min: -1000, max: 1000, noNaN: true }), { nil: undefined }),
-});
+// Base time for generating timestamps with guaranteed >2000ms spacing to avoid
+// triggering the store's merge-on-close-timestamps behavior (MERGE_THRESHOLD_MS = 2000)
+const baseTime = 1600000000000;
 
 const sensorIdArb = fc.string({ minLength: 1, maxLength: 20, unit: 'grapheme-ascii' });
 
@@ -31,7 +28,7 @@ const anomalyAlertArb: fc.Arbitrary<AnomalyAlert> = fc.record({
 
 const correctionPayloadArb: fc.Arbitrary<CorrectionPayload> = fc.record({
   sensor_id: sensorIdArb,
-  timestamp: fc.date({ min: new Date('2020-01-01'), max: new Date('2030-01-01') }).map(d => d.toISOString()),
+  timestamp: fc.integer({ min: 1577836800000, max: 1893456000000 }).map(ms => new Date(ms).toISOString()),
   values: fc.array(fc.double({ min: -100, max: 100, noNaN: true }), { minLength: 1, maxLength: 5 }),
   ensemble_spread: fc.double({ min: 0, max: 2, noNaN: true }),
   anomaly_flag: fc.boolean(),
@@ -68,10 +65,23 @@ describe('Property 1: Rolling Buffer Invariant', () => {
   it('buffer length equals min(N, 200) and contains the most recent points in chronological order', () => {
     fc.assert(
       fc.property(
-        fc.array(chartDataPointArb, { minLength: 0, maxLength: 500 }),
-        (points) => {
+        fc.array(
+          fc.record({
+            raw: fc.option(fc.double({ min: -1000, max: 1000, noNaN: true }), { nil: undefined }),
+            predicted: fc.option(fc.double({ min: -1000, max: 1000, noNaN: true }), { nil: undefined }),
+            corrected: fc.option(fc.double({ min: -1000, max: 1000, noNaN: true }), { nil: undefined }),
+          }),
+          { minLength: 0, maxLength: 500 }
+        ),
+        (partialPoints) => {
           resetStore();
           const sensorId = 'test-sensor';
+
+          // Generate points with guaranteed >2000ms spacing to avoid merge behavior
+          const points: ChartDataPoint[] = partialPoints.map((p, i) => ({
+            timestamp: baseTime + i * 3000,
+            ...p,
+          }));
 
           // Append all points sequentially
           for (const point of points) {

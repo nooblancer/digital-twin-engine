@@ -287,6 +287,11 @@ class TestMessageHandling:
             "values": [1.0, 2.0],
             "ensemble_spread": 0.05,
             "anomaly_flag": False,
+            # v1.2 fields — None when not present in the source message
+            "kalman_gain": None,
+            "innovation_magnitude": None,
+            "confidence_band_95": None,
+            "raw_prediction": None,
         }
         ws_manager.broadcast.assert_awaited_once_with("correction", expected_broadcast)
 

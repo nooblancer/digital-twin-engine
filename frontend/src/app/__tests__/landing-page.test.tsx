@@ -67,8 +67,8 @@ describe('Landing Page', () => {
       expect(screen.getByText('TailwindCSS')).toBeInTheDocument();
     });
 
-    it('renders the CTA button "View Live Dashboard"', () => {
-      expect(screen.getByText('View Live Dashboard')).toBeInTheDocument();
+    it('renders the CTA button "Launch Dashboard"', () => {
+      expect(screen.getByText('Launch Dashboard')).toBeInTheDocument();
     });
 
     it('renders a GitHub link', () => {
@@ -84,7 +84,7 @@ describe('Landing Page', () => {
     it('has href pointing to /dashboard', () => {
       render(<LandingPage />);
 
-      const ctaLink = screen.getByText('View Live Dashboard').closest('a');
+      const ctaLink = screen.getByText('Launch Dashboard').closest('a');
       expect(ctaLink).toHaveAttribute('href', '/dashboard');
     });
   });

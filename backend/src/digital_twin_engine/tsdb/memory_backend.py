@@ -31,9 +31,10 @@ class InMemoryTSDBBackend:
         await backend.stop()
     """
 
-    def __init__(self, fail_writes: bool = False) -> None:
+    def __init__(self, fail_writes: bool = False, max_events: int = 50000) -> None:
         self._events: List[TelemetryEvent] = []
         self._fail_writes = fail_writes
+        self._max_events = max_events
         self._write_call_count = 0
         self._running = False
 
@@ -89,6 +90,7 @@ class InMemoryTSDBBackend:
         """Write events to in-memory storage.
 
         Raises TSDBWriteError if fail_writes is True.
+        Evicts oldest events when max_events limit is reached.
         """
         self._write_call_count += 1
         if self._fail_writes:
@@ -98,6 +100,9 @@ class InMemoryTSDBBackend:
                 timestamp=str(events[0].timestamp) if events else "",
             )
         self._events.extend(events)
+        # Evict oldest events if over limit
+        if len(self._events) > self._max_events:
+            self._events = self._events[-self._max_events:]
 
     async def query_by_sensor_and_time(
         self,

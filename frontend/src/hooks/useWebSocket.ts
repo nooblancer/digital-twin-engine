@@ -15,6 +15,7 @@ import type {
   DegradationUpdatePayload,
   EngineSnapshot,
 } from '@/types';
+import type { ExtendedCorrectionPayload } from '@/types/correction-metrics';
 
 const DEFAULT_WS_URL =
   process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws/telemetry';
@@ -72,6 +73,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
   const updateSubsystemHealth = useStore((s) => s.updateSubsystemHealth);
   const updateDegradation = useStore((s) => s.updateDegradation);
   const restoreSnapshot = useStore((s) => s.restoreSnapshot);
+  const updateCorrectionMetrics = useStore((s) => s.updateCorrectionMetrics);
 
   const requestSnapshotsOnReconnect = useCallback(async () => {
     const state = useStore.getState();
@@ -132,6 +134,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
             corrected: payload.values[0],
           });
           updateSensorHealth(payload.sensor_id, payload);
+          updateCorrectionMetrics(message.payload as ExtendedCorrectionPayload);
           break;
         }
         case 'anomaly': {
@@ -177,6 +180,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
       updateHealthIndex,
       updateSubsystemHealth,
       updateDegradation,
+      updateCorrectionMetrics,
     ]
   );
 

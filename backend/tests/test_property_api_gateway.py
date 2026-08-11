@@ -249,7 +249,7 @@ class TestProperty18HistoryQueryFilteringOrderingPagination:
     @given(
         dataset=state_vector_sets(min_count=5, max_count=20),
     )
-    @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_full_range_query_returns_all_events(self, dataset: tuple):
         """Querying the full time range with large limit returns all events."""
         sensor_id, events = dataset

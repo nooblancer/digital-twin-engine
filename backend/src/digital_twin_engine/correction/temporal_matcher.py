@@ -480,7 +480,18 @@ class TemporalMatcher:
         )
 
         if self._on_match is not None:
-            await self._on_match(matched_pair, enkf_state)
+            # Limit pending EnKF tasks to prevent unbounded accumulation.
+            # With 63 sensors firing and only 1 EnKF running at a time,
+            # excess matches would pile up as thousands of pending tasks.
+            # Instead, cap at 16 pending tasks; drop excess (fresher data
+            # will arrive in subsequent cycles anyway).
+            if not hasattr(self, '_enkf_pending'):
+                self._enkf_pending: set = set()
+
+            if len(self._enkf_pending) < 16:
+                task = asyncio.create_task(self._on_match(matched_pair, enkf_state))
+                self._enkf_pending.add(task)
+                task.add_done_callback(self._enkf_pending.discard)
 
     # ------------------------------------------------------------------
     # Timeout Cleanup
