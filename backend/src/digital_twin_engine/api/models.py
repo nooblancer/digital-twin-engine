@@ -179,3 +179,57 @@ class PerformanceMetricsResponse(BaseModel):
 
     latency: LatencyMetricsModel
     throughput: ThroughputMetricsModel
+
+
+# --- v2.0 Fleet Response Models ---
+
+
+class EnginePairSimilarityModel(BaseModel):
+    """Pairwise similarity score between two engines' degradation signatures.
+
+    Requirements: 1.1, 1.2
+    """
+
+    engine_a: int
+    engine_b: int
+    similarity_score: float
+
+
+class PatternClusterModel(BaseModel):
+    """A cluster of engines sharing similar degradation patterns.
+
+    Requirements: 1.1, 1.3, 1.7
+    """
+
+    cluster_id: int
+    engine_ids: List[int]
+    pairwise_similarities: List[EnginePairSimilarityModel]
+    dominant_failure_mode: str
+
+
+class FleetPatternResponseModel(BaseModel):
+    """Response for GET /api/fleet/patterns.
+
+    Requirements: 1.1, 1.2, 1.3, 1.5, 1.7
+    """
+
+    clusters: List[PatternClusterModel] = []
+    insufficient_data_engines: List[int] = []
+    total_engines: int
+    eligible_engines: int
+
+
+class FleetStatsResponseModel(BaseModel):
+    """Response for GET /api/fleet/stats.
+
+    Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7
+    """
+
+    total_engines: int
+    nominal_count: int
+    degraded_count: int
+    critical_count: int
+    calibrating_count: int
+    average_fleet_health_index: Optional[float] = None
+    predicted_maintenance_events: int
+    horizon_cycles: int

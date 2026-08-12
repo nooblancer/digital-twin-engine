@@ -58,3 +58,13 @@ export type {
   PredictiveAlert,
   MissionControlState,
 } from './mission-control';
+
+export type {
+  EnginePairSimilarity,
+  PatternCluster,
+  FleetPatternResponse,
+  FleetStatsResponse,
+  FleetSliceState,
+} from './fleet';
+
+export type { MaintenanceRecommendation as FleetMaintenanceRecommendation } from './fleet';

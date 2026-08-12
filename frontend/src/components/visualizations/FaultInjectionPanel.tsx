@@ -140,7 +140,7 @@ export function FaultInjectionPanel() {
   }, [fetchActiveFaults]);
 
   return (
-    <GlowCard glowColor="cyan" isActive={justInjected}>
+    <GlowCard glowColor="cyan" isActive={justInjected} className="hover-depth">
       <div className="flex flex-col gap-4 p-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-[hsl(210,20%,92%)]">

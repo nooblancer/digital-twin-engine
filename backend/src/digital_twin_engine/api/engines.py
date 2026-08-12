@@ -43,6 +43,7 @@ _component_health_mapper: Any = None
 _degradation_tracker: Any = None
 _root_cause_analyzer: Any = None
 _predictive_alert_system: Any = None
+_maintenance_recommendation_engine: Any = None
 
 
 def configure_engine_services(
@@ -52,6 +53,7 @@ def configure_engine_services(
     degradation_tracker: Any = None,
     root_cause_analyzer: Any = None,
     predictive_alert_system: Any = None,
+    maintenance_recommendation_engine: Any = None,
 ) -> None:
     """Configure the service references for the engine API endpoints.
 
@@ -67,10 +69,15 @@ def configure_engine_services(
         root_cause_analyzer: RootCauseAnalyzer instance providing get_latest_analysis().
         predictive_alert_system: PredictiveAlertSystem instance providing
             get_recommendations().
+        maintenance_recommendation_engine: MaintenanceRecommendationEngine instance
+            providing fleet-pattern-enhanced get_recommendations(). When provided,
+            used preferentially over predictive_alert_system for the
+            maintenance-recommendations endpoint.
     """
     global _rul_predictor, _health_index_aggregator
     global _component_health_mapper, _degradation_tracker
     global _root_cause_analyzer, _predictive_alert_system
+    global _maintenance_recommendation_engine
 
     _rul_predictor = rul_predictor
     _health_index_aggregator = health_index_aggregator
@@ -78,6 +85,7 @@ def configure_engine_services(
     _degradation_tracker = degradation_tracker
     _root_cause_analyzer = root_cause_analyzer
     _predictive_alert_system = predictive_alert_system
+    _maintenance_recommendation_engine = maintenance_recommendation_engine
 
 
 @router.get(
@@ -362,7 +370,28 @@ async def get_maintenance_recommendations(engine_id: int) -> Any:
             recommendations=[],
         )
 
-    # Get recommendations from the PredictiveAlertSystem
+    # Prefer MaintenanceRecommendationEngine (fleet-pattern-enhanced) if wired
+    if _maintenance_recommendation_engine is not None:
+        recommendations = _maintenance_recommendation_engine.get_recommendations(engine_id)
+
+        # Convert MaintenanceRecommendation dataclass results to Pydantic models
+        recommendation_models = [
+            MaintenanceRecommendationModel(
+                severity="medium",  # Fleet-pattern engine doesn't classify severity directly
+                time_to_critical_cycles=0,
+                confidence_score=rec.confidence,
+                suggested_action=rec.recommended_action,
+                predicted_failure_mode=rec.failure_mode,
+            )
+            for rec in recommendations
+        ]
+
+        return MaintenanceRecommendationsResponse(
+            engine_id=engine_id,
+            recommendations=recommendation_models,
+        )
+
+    # Fallback: use PredictiveAlertSystem directly
     recommendations = _predictive_alert_system.get_recommendations(engine_id)
 
     # Convert dataclass results to Pydantic response models

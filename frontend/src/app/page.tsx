@@ -1,24 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { DATA_SOURCES } from '@/lib/data-sources';
 import type { DataSource } from '@/types';
 import {
+  HeroParticles,
+  AnimatedPipeline,
+  LiveDemoPreview,
+  StatsCounter,
+  BeforeAfterChart,
+} from '@/components/landing';
+import {
   Activity,
-  Brain,
   Cpu,
   Database,
   Globe,
   Layers,
   Radio,
   Rocket,
-  Server,
-  Zap,
   ArrowRight,
   ExternalLink,
-  ChevronRight,
 } from 'lucide-react';
 
 function GithubIcon({ className }: { className?: string }) {
@@ -30,14 +32,6 @@ function GithubIcon({ className }: { className?: string }) {
 }
 
 // ─── Data ────────────────────────────────────────────────────────────────────
-
-const ARCHITECTURE_STEPS = [
-  { label: 'Sensors', icon: Radio, description: 'Live telemetry ingestion from 11 data sources' },
-  { label: 'Ingestion', icon: Server, description: 'Kafka-backed stream processing pipeline' },
-  { label: 'ML Prediction', icon: Brain, description: 'LSTM + XGBoost dual-model forecasting' },
-  { label: 'EnKF Correction', icon: Zap, description: 'Ensemble Kalman Filter state correction' },
-  { label: 'API', icon: Globe, description: 'REST + WebSocket real-time delivery' },
-];
 
 const ROADMAP_ITEMS = [
   { status: 'done', label: 'Backend pipeline', description: 'Core ingestion, prediction, and correction services' },
@@ -96,7 +90,7 @@ const stagger = {
 
 function Navbar() {
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-md">
+    <nav aria-label="Main navigation" className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-md">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 group">
           <div className="h-8 w-8 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
@@ -107,10 +101,10 @@ function Navbar() {
 
         <div className="hidden sm:flex items-center gap-6">
           <Link href="/fleet" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Fleet</Link>
-          <a href="#architecture" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Architecture</a>
+          <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">How It Works</a>
+          <a href="#live-demo" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Demo</a>
           <a href="#sources" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Sources</a>
           <a href="#roadmap" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Roadmap</a>
-          <a href="#tech" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Stack</a>
         </div>
 
         <div className="flex items-center gap-3">
@@ -136,143 +130,11 @@ function Navbar() {
   );
 }
 
-function Hero() {
-  return (
-    <section className="pt-32 pb-16 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto">
-        <motion.div
-          className="flex flex-col items-center text-center gap-6"
-          initial="initial"
-          animate="animate"
-          variants={stagger}
-        >
-          <motion.div variants={fadeUp} className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border/60 bg-card/50 text-xs text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-            v1.2 — Real-time pipeline operational
-          </motion.div>
-
-          <motion.h1
-            variants={fadeUp}
-            className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-foreground max-w-3xl leading-[1.1]"
-          >
-            Sensor telemetry meets{' '}
-            <span className="bg-gradient-to-r from-primary via-[hsl(192,50%,65%)] to-[hsl(150,40%,55%)] bg-clip-text text-transparent">
-              predictive intelligence
-            </span>
-          </motion.h1>
-
-          <motion.p
-            variants={fadeUp}
-            className="text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed"
-          >
-            Ingest live sensor data, forecast state with dual ML models, and apply Ensemble Kalman Filter
-            corrections — all in real time. Monitor anomalies, explore history, and predict failures
-            across 11 data domains.
-          </motion.p>
-
-          <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <Link
-              href="/fleet"
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/20"
-            >
-              Fleet Overview
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-accent transition-colors"
-            >
-              Sensor Dashboard
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <a
-              href="https://github.com/your-org/digital-twin-engine"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-accent transition-colors"
-            >
-              <GithubIcon className="h-4 w-4" />
-              Source Code
-              <ExternalLink className="h-3 w-3 opacity-50" />
-            </a>
-          </motion.div>
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-function ArchitectureSection() {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-
-  return (
-    <section id="architecture" className="py-20 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto">
-        <motion.div
-          initial="initial"
-          whileInView="animate"
-          viewport={{ once: true, margin: '-100px' }}
-          variants={stagger}
-          className="flex flex-col gap-10"
-        >
-          <motion.div variants={fadeUp} className="flex flex-col gap-2">
-            <h2 className="text-2xl font-semibold text-foreground">How it works</h2>
-            <p className="text-sm text-muted-foreground max-w-lg">
-              Data flows through five stages, from raw sensor readings to corrected, queryable state.
-            </p>
-          </motion.div>
-
-          <motion.div variants={fadeUp} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {ARCHITECTURE_STEPS.map((step, index) => {
-              const Icon = step.icon;
-              const isHovered = hoveredIndex === index;
-              return (
-                <motion.div
-                  key={step.label}
-                  onMouseEnter={() => setHoveredIndex(index)}
-                  onMouseLeave={() => setHoveredIndex(null)}
-                  className={`group relative flex flex-col gap-3 p-4 rounded-lg border transition-all cursor-default ${
-                    isHovered
-                      ? 'border-primary/40 bg-primary/5 shadow-md shadow-primary/5'
-                      : 'border-border/60 bg-card/50 hover:border-border'
-                  }`}
-                  whileHover={{ y: -2 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {/* Step number */}
-                  <div className="absolute top-2 right-3 text-[10px] font-mono text-muted-foreground/50">
-                    {String(index + 1).padStart(2, '0')}
-                  </div>
-                  <div className={`h-9 w-9 rounded-md flex items-center justify-center transition-colors ${
-                    isHovered ? 'bg-primary/15' : 'bg-muted/50'
-                  }`}>
-                    <Icon className={`h-4.5 w-4.5 transition-colors ${isHovered ? 'text-primary' : 'text-muted-foreground'}`} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-foreground">{step.label}</h3>
-                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{step.description}</p>
-                  </div>
-                  {/* Connector arrow (desktop only) */}
-                  {index < ARCHITECTURE_STEPS.length - 1 && (
-                    <div className="hidden lg:block absolute -right-2 top-1/2 -translate-y-1/2 z-10">
-                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" />
-                    </div>
-                  )}
-                </motion.div>
-              );
-            })}
-          </motion.div>
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
 function DataSourcesSection() {
   const grouped = groupByDomain(DATA_SOURCES);
 
   return (
-    <section id="sources" className="py-20 px-4 sm:px-6 border-t border-border/30">
+    <section id="sources" aria-label="Data sources" className="py-20 px-4 sm:px-6 border-t border-border/30">
       <div className="max-w-6xl mx-auto">
         <motion.div
           initial="initial"
@@ -326,7 +188,7 @@ function DataSourcesSection() {
 
 function RoadmapSection() {
   return (
-    <section id="roadmap" className="py-20 px-4 sm:px-6 border-t border-border/30">
+    <section id="roadmap" aria-label="Development roadmap" className="py-20 px-4 sm:px-6 border-t border-border/30">
       <div className="max-w-6xl mx-auto">
         <motion.div
           initial="initial"
@@ -347,7 +209,7 @@ function RoadmapSection() {
             <div className="absolute left-[11px] top-2 bottom-2 w-px bg-border/60" />
 
             <div className="flex flex-col gap-0">
-              {ROADMAP_ITEMS.map((item, index) => (
+              {ROADMAP_ITEMS.map((item) => (
                 <div key={item.label} className="relative flex gap-4 py-3 group">
                   {/* Dot */}
                   <div className={`relative z-10 mt-0.5 h-[22px] w-[22px] flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
@@ -390,7 +252,7 @@ function TechStackSection() {
   const categories = ['Backend', 'ML', 'Infrastructure', 'Frontend'];
 
   return (
-    <section id="tech" className="py-20 px-4 sm:px-6 border-t border-border/30">
+    <section id="tech" aria-label="Technology stack" className="py-20 px-4 sm:px-6 border-t border-border/30">
       <div className="max-w-6xl mx-auto">
         <motion.div
           initial="initial"
@@ -466,11 +328,107 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <Hero />
-      <ArchitectureSection />
-      <DataSourcesSection />
-      <RoadmapSection />
-      <TechStackSection />
+
+      <main>
+        {/* ─── Hero Section with Particle Background ─────────────────────── */}
+        <section
+          aria-label="Hero — Sensor telemetry meets predictive intelligence"
+          className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden"
+        >
+          {/* Particle background — absolute positioned, z-0 */}
+          <HeroParticles />
+
+          {/* Hero content above particles */}
+          <div className="relative z-10 flex flex-col items-center text-center gap-8 px-4 sm:px-6 pt-24 pb-16 max-w-6xl mx-auto w-full">
+            <motion.div
+              className="flex flex-col items-center gap-6"
+              initial="initial"
+              animate="animate"
+              variants={stagger}
+            >
+              <motion.div variants={fadeUp} className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border/60 bg-card/50 text-xs text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                v2.0 — Real-time pipeline with EnKF correction
+              </motion.div>
+
+              <motion.h1
+                variants={fadeUp}
+                className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-foreground max-w-3xl leading-[1.1]"
+              >
+                Sensor telemetry meets{' '}
+                <span className="bg-gradient-to-r from-primary via-[hsl(192,50%,65%)] to-[hsl(150,40%,55%)] bg-clip-text text-transparent">
+                  predictive intelligence
+                </span>
+              </motion.h1>
+
+              <motion.p
+                variants={fadeUp}
+                className="text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed"
+              >
+                Ingest live sensor data, forecast state with dual ML models, and apply Ensemble Kalman Filter
+                corrections — all in real time. Monitor anomalies, explore history, and predict failures
+                across 11 data domains.
+              </motion.p>
+
+              <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                <Link
+                  href="/fleet"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/20"
+                >
+                  Fleet Overview
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-accent transition-colors"
+                >
+                  Sensor Dashboard
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <a
+                  href="https://github.com/your-org/digital-twin-engine"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-accent transition-colors"
+                >
+                  <GithubIcon className="h-4 w-4" />
+                  Source Code
+                  <ExternalLink className="h-3 w-3 opacity-50" />
+                </a>
+              </motion.div>
+            </motion.div>
+
+            {/* Animated Pipeline — "How it works" directly in hero */}
+            <div id="how-it-works" className="w-full mt-12">
+              <AnimatedPipeline />
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Live Demo Preview Section ─────────────────────────────────── */}
+        <div
+          id="live-demo"
+          className="py-20 px-4 sm:px-6 border-t border-border/30"
+        >
+          <LiveDemoPreview />
+        </div>
+
+        {/* ─── Stats Counter Section ─────────────────────────────────────── */}
+        <div className="py-20 px-4 sm:px-6 border-t border-border/30">
+          <StatsCounter />
+        </div>
+
+        {/* ─── Before/After Chart Section ────────────────────────────────── */}
+        <div className="py-20 px-4 sm:px-6 border-t border-border/30">
+          <BeforeAfterChart />
+        </div>
+
+        {/* ─── Existing Sections ─────────────────────────────────────────── */}
+        <DataSourcesSection />
+        <RoadmapSection />
+        <TechStackSection />
+      </main>
+
       <Footer />
     </div>
   );

@@ -14,6 +14,7 @@ import type {
 import { createDigitalTwinSlice } from './digital-twin';
 import { createCorrectionMetricsSlice, type CorrectionMetricsSlice } from './correction-metrics';
 import { createMissionControlSlice, type MissionControlSlice } from './mission-control';
+import { createFleetSlice, type FleetSlice } from './fleet-slice';
 
 const MAX_BUFFER_SIZE = 200;
 const MAX_ANOMALIES = 100;
@@ -25,7 +26,7 @@ interface UIState {
   isSwitchingSource: boolean;
 }
 
-interface StoreState extends DigitalTwinState, CorrectionMetricsSlice, MissionControlSlice {
+interface StoreState extends DigitalTwinState, CorrectionMetricsSlice, MissionControlSlice, FleetSlice {
   // Slices
   sensorData: Record<string, ChartDataPoint[]>;
   anomalies: AnomalyAlert[];
@@ -66,6 +67,9 @@ export const useStore = create<StoreState>((set, get, store) => ({
 
   // Mission Control slice
   ...createMissionControlSlice(set, get, store),
+
+  // Fleet slice
+  ...createFleetSlice(set, get, store),
 
   // Initial state
   sensorData: {},

@@ -228,7 +228,7 @@ export function WhatIfStressSlider({
   const isDisabled = dataStatus === 'insufficient' || dataStatus === 'loading';
 
   return (
-    <GlowCard glowColor="violet" isActive={isLoading}>
+    <GlowCard glowColor="violet" isActive={isLoading} className="hover-depth">
       <div className="flex flex-col gap-3 p-4">
         {/* Header */}
         <div className="flex items-center justify-between">

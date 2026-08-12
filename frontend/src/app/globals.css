@@ -334,3 +334,48 @@
     box-shadow: none;
   }
 }
+
+/* ===== Global Focus Indicators (WCAG 2.4.7) ===== */
+/* Visible focus ring for all interactive elements using :focus-visible.
+   Distinct from glow effects — uses a solid ring offset from the element. */
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* Remove default outline only when our custom ring is applied */
+a:focus:not(:focus-visible),
+button:focus:not(:focus-visible),
+[tabindex]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* SVG focus indicator for pipeline stage nodes */
+g[tabindex]:focus-visible .focus-ring {
+  opacity: 1 !important;
+}
+
+g[tabindex]:focus-visible {
+  outline: none;
+}
+
+/* ===== Global Reduced Motion Safety Net (Requirement 14.4) ===== */
+/* Disables ALL CSS animations and transitions for users who prefer reduced motion.
+   Framer Motion v13+ respects this preference automatically via the browser API.
+   This catch-all ensures no CSS animation is missed by per-class rules above. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

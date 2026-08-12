@@ -46,6 +46,7 @@ from digital_twin_engine.api.benchmark import configure_benchmark_services
 from digital_twin_engine.api.broker_subscriber import BrokerSubscriber
 from digital_twin_engine.api.engines import configure_engine_services
 from digital_twin_engine.api.fault_injection_api import configure_fault_injector
+from digital_twin_engine.api.fleet import configure_fleet_services
 from digital_twin_engine.api.health import register_health_check
 from digital_twin_engine.api.simulation_api import configure_simulation_services
 from digital_twin_engine.benchmarking.benchmark_runner import LiveBenchmarkRunner
@@ -64,7 +65,10 @@ from digital_twin_engine.ml_service.batch_accumulator import BatchAccumulator
 from digital_twin_engine.ml_service.ensemble_inference import create_ensemble_predict_fn
 from digital_twin_engine.prognostics.component_health import ComponentHealthMapper
 from digital_twin_engine.prognostics.degradation_tracker import DegradationCurveTracker
+from digital_twin_engine.prognostics.fleet_patterns import FleetPatternRecognizer
+from digital_twin_engine.prognostics.fleet_stats import FleetStatsAggregator
 from digital_twin_engine.prognostics.health_index import HealthIndexAggregator
+from digital_twin_engine.prognostics.maintenance_recommendations import MaintenanceRecommendationEngine
 from digital_twin_engine.prognostics.rul_predictor import RULPredictor
 from digital_twin_engine.shared.models import ComponentStatus, EngineConfig, StateVector, TelemetryEvent
 from digital_twin_engine.shared.models import serialize_telemetry_event
@@ -110,6 +114,9 @@ def print_banner() -> None:
     ✓ Live Benchmark Runner
     ✓ Latency Profiler
     ✓ Throughput Monitor
+    ✓ Fleet Pattern Recognizer
+    ✓ Fleet Stats Aggregator
+    ✓ Maintenance Recommendation Engine
 
   Access:
     API:       http://localhost:8000
@@ -276,8 +283,27 @@ async def run_local() -> None:
     # Throughput Monitor: tracks events/sec, predictions/sec, corrections/sec
     throughput_monitor = ThroughputMonitor()
 
-    # --- Wire v1.4 services into API layer ---
-    # Update engine services with root cause analyzer and predictive alert system
+    # --- v2.0 Fleet Services ---
+    fleet_pattern_recognizer = FleetPatternRecognizer(
+        degradation_tracker=degradation_tracker,
+        health_index_aggregator=health_index_aggregator,
+    )
+    fleet_stats_aggregator = FleetStatsAggregator(
+        health_index_aggregator=health_index_aggregator,
+        monte_carlo_projector=monte_carlo_projector,
+    )
+    maintenance_recommendation_engine = MaintenanceRecommendationEngine(
+        pattern_recognizer=fleet_pattern_recognizer,
+        predictive_alert_system=predictive_alert_system,
+    )
+    configure_fleet_services(
+        pattern_recognizer=fleet_pattern_recognizer,
+        stats_aggregator=fleet_stats_aggregator,
+    )
+
+    # --- Wire v1.4 + v2.0 services into API layer ---
+    # Update engine services with root cause analyzer, predictive alert system,
+    # and fleet-pattern-enhanced maintenance recommendation engine
     configure_engine_services(
         rul_predictor=rul_predictor,
         health_index_aggregator=health_index_aggregator,
@@ -285,6 +311,7 @@ async def run_local() -> None:
         degradation_tracker=degradation_tracker,
         root_cause_analyzer=root_cause_analyzer,
         predictive_alert_system=predictive_alert_system,
+        maintenance_recommendation_engine=maintenance_recommendation_engine,
     )
 
     # Wire benchmark and performance services into the benchmark API
