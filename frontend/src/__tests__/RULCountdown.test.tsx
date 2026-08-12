@@ -179,7 +179,7 @@ describe('RULCountdown', () => {
       );
 
       const wrapper = container.firstElementChild as HTMLElement;
-      expect(wrapper.className).toContain('border-red-500/50');
+      expect(wrapper.className).toContain('glow-red');
     });
 
     it('RUL=30 has amber glow border', () => {
@@ -188,7 +188,7 @@ describe('RULCountdown', () => {
       );
 
       const wrapper = container.firstElementChild as HTMLElement;
-      expect(wrapper.className).toContain('border-amber-500/30');
+      expect(wrapper.className).toContain('glow-amber');
     });
 
     it('RUL=50 has default subtle border', () => {
@@ -197,7 +197,7 @@ describe('RULCountdown', () => {
       );
 
       const wrapper = container.firstElementChild as HTMLElement;
-      expect(wrapper.className).toContain('border-white/[0.06]');
+      expect(wrapper.className).toContain('glow-emerald');
     });
   });
 });

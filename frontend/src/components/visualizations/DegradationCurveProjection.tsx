@@ -12,6 +12,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts';
+import { GlowCard } from '@/components/ui/GlowCard';
 import type { SimulationResult } from '@/types/simulation';
 
 const CRITICAL_THRESHOLD = 0.4;
@@ -174,28 +175,35 @@ export function DegradationCurveProjection({
 
   if (historicalData.length === 0) {
     return (
-      <div
-        className="flex items-center justify-center rounded-lg border border-white/5 bg-[#12141a]"
-        style={{ height }}
-      >
-        <p className="text-sm text-gray-400">
-          No trajectory data available yet. Waiting for health updates...
-        </p>
-      </div>
+      <GlowCard glowColor="emerald" isActive={false}>
+        <div
+          className="flex items-center justify-center"
+          style={{ height }}
+        >
+          <p className="text-sm text-gray-400">
+            No trajectory data available yet. Waiting for health updates...
+          </p>
+        </div>
+      </GlowCard>
     );
   }
 
   return (
-    <div className="w-full">
-      <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-          {/* SVG defs for projection gradient */}
-          <defs>
-            <linearGradient id={safeGradientId} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#10b981" stopOpacity={1} />
-              <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-            </linearGradient>
-          </defs>
+    <GlowCard glowColor="emerald" isActive={!!projectionPercentiles}>
+      <div className="w-full">
+        <ResponsiveContainer width="100%" height={height}>
+          <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+            {/* SVG defs for projection gradient and fill gradients (Requirement 9) */}
+            <defs>
+              <linearGradient id={safeGradientId} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#10b981" stopOpacity={1} />
+                <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id={`${safeGradientId}-fill`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#00d4ff" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#00d4ff" stopOpacity={0} />
+              </linearGradient>
+            </defs>
 
           <CartesianGrid stroke="hsl(220, 10%, 20%)" strokeDasharray="3 3" />
 
@@ -256,14 +264,14 @@ export function DegradationCurveProjection({
             />
           )}
 
-          {/* 5th-95th confidence interval — shaded cyan area (10% opacity) */}
+          {/* 5th-95th confidence interval — gradient fill (Requirement 9) */}
           <Area
             type="monotone"
             dataKey="confidenceBand"
             name="90% Confidence Interval"
             stroke="none"
-            fill="#00d4ff"
-            fillOpacity={0.1}
+            fill={`url(#${safeGradientId}-fill)`}
+            fillOpacity={0.4}
             isAnimationActive={true}
             animationDuration={500}
             connectNulls={false}
@@ -296,5 +304,6 @@ export function DegradationCurveProjection({
         </ComposedChart>
       </ResponsiveContainer>
     </div>
+    </GlowCard>
   );
 }

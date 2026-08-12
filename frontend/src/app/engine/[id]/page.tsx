@@ -15,6 +15,8 @@ import { WhatIfStressSlider } from '@/components/visualizations/WhatIfStressSlid
 import { MonteCarloFanChart } from '@/components/visualizations/MonteCarloFanChart';
 import { DegradationCurveProjection } from '@/components/visualizations/DegradationCurveProjection';
 import { RULCountdown } from '@/components/visualizations/RULCountdown';
+import { BentoGrid } from '@/components/dashboard/BentoGrid';
+import type { BentoGridItem } from '@/components/dashboard/BentoGrid';
 import type { SimulationResult } from '@/types/simulation';
 
 export default function EngineDashboardPage() {
@@ -103,69 +105,16 @@ export default function EngineDashboardPage() {
           </div>
         </div>
 
-        {/* RUL Countdown — Prominent placement near health index */}
-        <RULCountdown
-          expectedRul={simulationResult?.expected_rul ?? (isCriticalRUL ? rul : null)}
-          confidenceInterval90={simulationResult?.confidence_interval_90 ?? null}
+        {/* v1.3 Simulation Components — BentoGrid Layout */}
+        <SimulationBentoSection
+          engineId={engineId}
+          simulationResult={simulationResult}
+          onSimulationResult={handleSimulationResult}
+          rul={rul}
+          isCriticalRUL={isCriticalRUL}
+          trajectory={trajectory}
+          degradationRate={degradationRate}
         />
-
-        {/* Fault Injection Panel — Collapsible sidebar section */}
-        <details className="rounded-lg border border-border bg-card">
-          <summary className="px-6 py-4 cursor-pointer text-lg font-medium hover:text-cyan-400 transition-colors">
-            Fault Injection Controls
-          </summary>
-          <div className="px-6 pb-6">
-            <FaultInjectionPanel />
-          </div>
-        </details>
-
-        {/* What-If Stress Slider — Above projection charts */}
-        <section className="rounded-lg border border-border bg-card p-6">
-          <WhatIfStressSlider
-            engineId={engineId}
-            onSimulationResult={handleSimulationResult}
-          />
-        </section>
-
-        {/* Monte Carlo Fan Chart — New visualization card */}
-        <section className="rounded-lg border border-border bg-card p-6">
-          <h2 className="text-lg font-medium mb-4">Monte Carlo Projection</h2>
-          <MonteCarloFanChart
-            percentiles={simulationResult?.percentiles ?? null}
-          />
-        </section>
-
-        {/* Degradation Curve with Future Projection — Replaces basic trajectory chart */}
-        <section className="rounded-lg border border-border bg-card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-medium">Degradation Curve &amp; Projection</h2>
-            {degradationRate !== null && (
-              <div className="text-sm text-muted-foreground">
-                Degradation rate:{' '}
-                <span
-                  data-testid="degradation-rate"
-                  className={`font-mono font-medium ${
-                    degradationRate > 0.02
-                      ? 'text-destructive'
-                      : 'text-foreground'
-                  }`}
-                >
-                  {degradationRate.toFixed(4)}
-                </span>
-                <span className="ml-1">HI/cycle</span>
-              </div>
-            )}
-            {degradationRate === null && (
-              <p className="text-sm text-muted-foreground italic">
-                Degradation rate unavailable (&lt;20 cycles)
-              </p>
-            )}
-          </div>
-          <DegradationCurveProjection
-            historicalData={trajectory}
-            projectionPercentiles={simulationResult?.percentiles ?? null}
-          />
-        </section>
 
         {/* Engine Schematic View */}
         <section className="rounded-lg border border-border bg-card p-6">
@@ -178,6 +127,126 @@ export default function EngineDashboardPage() {
       </div>
     </main>
   );
+}
+
+/** Props for the simulation bento section. */
+interface SimulationBentoSectionProps {
+  engineId: number;
+  simulationResult: SimulationResult | null;
+  onSimulationResult: (result: SimulationResult) => void;
+  rul: number;
+  isCriticalRUL: boolean;
+  trajectory: { cycle: number; healthIndex: number }[];
+  degradationRate: number | null;
+}
+
+/**
+ * SimulationBentoSection — Renders the v1.3 simulation components in a
+ * BentoGrid layout with the assigned spans:
+ *   RULCountdown: 1x1
+ *   WhatIfStressSlider: 2x1
+ *   MonteCarloFanChart: 2x2
+ *   DegradationCurveProjection: 2x2
+ *   FaultInjectionPanel: 1x2
+ *
+ * Each component fills its grid cell without overflow or clipping.
+ * Responsive collapse to single-column is handled by BentoGrid CSS.
+ */
+function SimulationBentoSection({
+  engineId,
+  simulationResult,
+  onSimulationResult,
+  rul,
+  isCriticalRUL,
+  trajectory,
+  degradationRate,
+}: SimulationBentoSectionProps) {
+  const items: BentoGridItem[] = [
+    {
+      id: 'rul-countdown',
+      size: '1x1',
+      component: (
+        <div className="h-full w-full flex flex-col">
+          <RULCountdown
+            expectedRul={simulationResult?.expected_rul ?? (isCriticalRUL ? rul : null)}
+            confidenceInterval90={simulationResult?.confidence_interval_90 ?? null}
+          />
+        </div>
+      ),
+    },
+    {
+      id: 'what-if-slider',
+      size: '2x1',
+      component: (
+        <div className="h-full w-full flex flex-col overflow-hidden">
+          <WhatIfStressSlider
+            engineId={engineId}
+            onSimulationResult={onSimulationResult}
+          />
+        </div>
+      ),
+    },
+    {
+      id: 'fault-injection',
+      size: '1x2',
+      component: (
+        <div className="h-full w-full overflow-y-auto">
+          <FaultInjectionPanel />
+        </div>
+      ),
+    },
+    {
+      id: 'monte-carlo-fan',
+      size: '2x2',
+      component: (
+        <div className="h-full w-full flex flex-col">
+          <MonteCarloFanChart
+            percentiles={simulationResult?.percentiles ?? null}
+            height={440}
+          />
+        </div>
+      ),
+    },
+    {
+      id: 'degradation-curve',
+      size: '2x2',
+      component: (
+        <div className="h-full w-full flex flex-col">
+          <div className="flex items-center justify-between px-4 pt-3 pb-1 shrink-0">
+            <h2 className="text-sm font-medium text-[hsl(210,20%,92%)]">
+              Degradation Curve &amp; Projection
+            </h2>
+            {degradationRate !== null && (
+              <span
+                data-testid="degradation-rate"
+                className={`text-xs font-mono ${
+                  degradationRate > 0.02
+                    ? 'text-red-400'
+                    : 'text-[hsl(210,20%,78%)]'
+                }`}
+              >
+                {degradationRate.toFixed(4)} HI/cycle
+              </span>
+            )}
+            {degradationRate === null && (
+              <span className="text-xs text-[hsl(215,12%,58%)] italic">
+                Degradation rate unavailable
+              </span>
+            )}
+          </div>
+          <div className="flex-1 min-h-0">
+            <DegradationCurveProjection
+              historicalData={trajectory}
+              projectionPercentiles={simulationResult?.percentiles ?? null}
+              height={400}
+            />
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  return <BentoGrid items={items} className="engine-bento" />;
 }
 
 function CorrectionAnalysisSection({ engineId }: { engineId: number }) {

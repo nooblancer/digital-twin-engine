@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { GlowCard } from '@/components/ui/GlowCard';
 import type { SimulationResult } from '@/types/simulation';
 
 const API_BASE =
@@ -9,6 +10,12 @@ const API_BASE =
 /** Debounce delay in ms for slider changes before triggering API call. */
 const DEBOUNCE_MS = 300;
 
+/** Polling interval for snapshot to check cycle count. */
+const SNAPSHOT_POLL_MS = 5000;
+
+/** Minimum cycles required for simulation. */
+const MIN_CYCLES = 20;
+
 /** Tick mark positions for the slider. */
 const TICK_MARKS = [
   { value: 0.5, label: '0.5x' },
@@ -16,6 +23,8 @@ const TICK_MARKS = [
   { value: 1.5, label: '1.5x' },
   { value: 2.0, label: '2.0x' },
 ];
+
+type DataStatus = 'loading' | 'ready' | 'insufficient' | 'error';
 
 interface WhatIfStressSliderProps {
   /** Engine ID to run simulation for. */
@@ -33,7 +42,10 @@ interface WhatIfStressSliderProps {
  * calls POST /simulation/what-if with a 300ms debounce and propagates the result
  * to the parent via onSimulationResult callback.
  *
- * Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7
+ * Shows a progress indicator when insufficient data exists (< 20 cycles) instead
+ * of a red error. Only shows red errors for actual unexpected failures (500s, network).
+ *
+ * Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 16.1, 16.2, 16.5, 16.6
  */
 export function WhatIfStressSlider({
   engineId,
@@ -44,9 +56,48 @@ export function WhatIfStressSlider({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [lastResult, setLastResult] = useState<SimulationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dataStatus, setDataStatus] = useState<DataStatus>('loading');
+  const [cycleCount, setCycleCount] = useState<number>(0);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const snapshotPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasAutoTriggeredRef = useRef<boolean>(false);
+
+  /** Fetch the snapshot to get current cycle count. */
+  const fetchSnapshot = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/engines/${engineId}/snapshot`
+      );
+      if (!response.ok) {
+        // Engine not found or backend issue — keep in loading state
+        if (response.status === 404) {
+          setDataStatus('insufficient');
+          setCycleCount(0);
+        } else {
+          setDataStatus('error');
+          setError(`Failed to fetch engine status (${response.status})`);
+        }
+        return;
+      }
+      const data = await response.json();
+      const cycles = data.health?.cycle_count ?? 0;
+      setCycleCount(cycles);
+
+      if (cycles >= MIN_CYCLES) {
+        setDataStatus('ready');
+      } else {
+        setDataStatus('insufficient');
+      }
+    } catch (err) {
+      // Network error fetching snapshot
+      setDataStatus('error');
+      setError(
+        err instanceof Error ? err.message : 'Failed to connect to engine'
+      );
+    }
+  }, [engineId]);
 
   /** Fetch simulation result from the API for the given stress factor. */
   const fetchSimulation = useCallback(
@@ -76,11 +127,21 @@ export function WhatIfStressSlider({
 
         if (!response.ok) {
           const body = await response.text();
+
+          // Check if this is an insufficient-data 404 (not an unexpected error)
+          if (response.status === 404 && body.toLowerCase().includes('insufficient')) {
+            // Not an error — just insufficient data, handled by polling
+            setDataStatus('insufficient');
+            return;
+          }
+
+          // Actual unexpected error (500, network issues, etc.)
           throw new Error(`Simulation failed (${response.status}): ${body}`);
         }
 
         const data: SimulationResult = await response.json();
         setLastResult(data);
+        setDataStatus('ready');
         onSimulationResult(data);
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
@@ -90,6 +151,7 @@ export function WhatIfStressSlider({
         const message =
           err instanceof Error ? err.message : 'Unknown error running simulation';
         setError(message);
+        setDataStatus('error');
       } finally {
         setIsLoading(false);
       }
@@ -116,12 +178,35 @@ export function WhatIfStressSlider({
     [fetchSimulation]
   );
 
-  // Load initial projection at stress_factor 1.0 on mount
+  // Poll snapshot every 5s to track cycle count progress
   useEffect(() => {
-    fetchSimulation(1.0);
+    // Initial fetch
+    fetchSnapshot();
+    hasAutoTriggeredRef.current = false;
+
+    // Set up polling
+    snapshotPollRef.current = setInterval(() => {
+      fetchSnapshot();
+    }, SNAPSHOT_POLL_MS);
 
     return () => {
-      // Cleanup pending debounce and abort controller on unmount
+      if (snapshotPollRef.current) {
+        clearInterval(snapshotPollRef.current);
+      }
+    };
+  }, [fetchSnapshot]);
+
+  // Auto-trigger initial simulation when data becomes ready (Requirement 16.5)
+  useEffect(() => {
+    if (dataStatus === 'ready' && !hasAutoTriggeredRef.current) {
+      hasAutoTriggeredRef.current = true;
+      fetchSimulation(stressFactor);
+    }
+  }, [dataStatus, fetchSimulation, stressFactor]);
+
+  // Cleanup on unmount or engineId change
+  useEffect(() => {
+    return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
@@ -129,7 +214,6 @@ export function WhatIfStressSlider({
         abortControllerRef.current.abort();
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineId]);
 
   /** Generate human-readable summary of the simulation result. */
@@ -141,20 +225,53 @@ export function WhatIfStressSlider({
     return `At ${stressFactor.toFixed(1)}x stress, RUL is estimated at ${lastResult.expected_rul} cycles`;
   };
 
+  const isDisabled = dataStatus === 'insufficient' || dataStatus === 'loading';
+
   return (
-    <div className="flex flex-col gap-3 p-4 rounded-lg bg-[#12141a] border border-white/5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-[hsl(210,20%,92%)]">
-          What-If Stress Simulation
-        </h3>
-        {isLoading && (
-          <span
-            data-testid="loading-indicator"
-            className="inline-flex items-center gap-1.5 text-xs text-cyan-400"
+    <GlowCard glowColor="violet" isActive={isLoading}>
+      <div className="flex flex-col gap-3 p-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-[hsl(210,20%,92%)]">
+            What-If Stress Simulation
+          </h3>
+          {isLoading && dataStatus === 'ready' && (
+            <span
+              data-testid="loading-indicator"
+              className="inline-flex items-center gap-1.5 text-xs text-cyan-400"
+            >
+              <svg
+                className="animate-spin h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
+              </svg>
+              Simulating…
+            </span>
+          )}
+        </div>
+
+        {/* Insufficient data progress indicator (Requirement 16.1) */}
+        {(dataStatus === 'insufficient' || dataStatus === 'loading') && (
+          <div
+            data-testid="insufficient-data-indicator"
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-md bg-mission-cyan/5 border border-mission-cyan/10"
           >
             <svg
-              className="animate-spin h-3 w-3"
+              className="animate-spin h-4 w-4 text-cyan-400 shrink-0"
               viewBox="0 0 24 24"
               fill="none"
             >
@@ -172,72 +289,87 @@ export function WhatIfStressSlider({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
               />
             </svg>
-            Simulating…
+            <span className="text-xs text-cyan-300">
+              Collecting data: {cycleCount}/{MIN_CYCLES} cycles needed
+            </span>
+          </div>
+        )}
+
+        {/* Current value display */}
+        <div className="flex items-baseline gap-2">
+          <span
+            className={`text-2xl font-mono font-bold ${
+              isDisabled ? 'text-[hsl(215,12%,48%)]' : 'text-cyan-400'
+            }`}
+          >
+            {stressFactor.toFixed(1)}x
           </span>
+          <span className="text-xs text-[hsl(215,12%,58%)]">
+            operational stress
+          </span>
+        </div>
+
+        {/* Range slider (Requirement 16.2: disabled when insufficient data) */}
+        <div className="flex flex-col gap-1">
+          <input
+            type="range"
+            min="0.5"
+            max="2.0"
+            step="0.1"
+            value={stressFactor}
+            onChange={handleSliderChange}
+            disabled={isDisabled}
+            aria-label="Operational stress factor"
+            aria-valuemin={0.5}
+            aria-valuemax={2.0}
+            aria-valuenow={stressFactor}
+            className={`w-full h-2 rounded-full appearance-none ${
+              isDisabled
+                ? 'cursor-not-allowed opacity-40 bg-white/5'
+                : 'cursor-pointer bg-white/10 accent-cyan-500'
+            } [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full ${
+              isDisabled
+                ? '[&::-webkit-slider-thumb]:bg-[hsl(215,12%,38%)]'
+                : '[&::-webkit-slider-thumb]:bg-cyan-400 [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(0,212,255,0.5)]'
+            }`}
+          />
+
+          {/* Tick marks */}
+          <div className="flex justify-between px-0.5">
+            {TICK_MARKS.map((tick) => (
+              <span
+                key={tick.value}
+                className={`text-[10px] font-mono ${
+                  !isDisabled && Math.abs(stressFactor - tick.value) < 0.05
+                    ? 'text-cyan-400 font-semibold'
+                    : 'text-[hsl(215,12%,48%)]'
+                }`}
+              >
+                {tick.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Human-readable summary */}
+        {lastResult && dataStatus === 'ready' && (
+          <p className="text-xs text-[hsl(215,12%,68%)] mt-1">
+            {getSummaryText()}
+            {lastResult.confidence_interval_90 && (
+              <span className="text-[hsl(215,12%,48%)] ml-1">
+                (90% CI: {lastResult.confidence_interval_90[0]}–{lastResult.confidence_interval_90[1]} cycles)
+              </span>
+            )}
+          </p>
+        )}
+
+        {/* Error message — only for actual unexpected errors (500s, network failures) */}
+        {error && dataStatus === 'error' && (
+          <p className="text-xs text-red-400 px-2 py-1.5 rounded bg-red-500/10 border border-mission-crimson/20">
+            {error}
+          </p>
         )}
       </div>
-
-      {/* Current value display */}
-      <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-mono font-bold text-cyan-400">
-          {stressFactor.toFixed(1)}x
-        </span>
-        <span className="text-xs text-[hsl(215,12%,58%)]">
-          operational stress
-        </span>
-      </div>
-
-      {/* Range slider */}
-      <div className="flex flex-col gap-1">
-        <input
-          type="range"
-          min="0.5"
-          max="2.0"
-          step="0.1"
-          value={stressFactor}
-          onChange={handleSliderChange}
-          aria-label="Operational stress factor"
-          aria-valuemin={0.5}
-          aria-valuemax={2.0}
-          aria-valuenow={stressFactor}
-          className="w-full h-2 rounded-full appearance-none cursor-pointer bg-white/10 accent-cyan-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-400 [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(0,212,255,0.5)]"
-        />
-
-        {/* Tick marks */}
-        <div className="flex justify-between px-0.5">
-          {TICK_MARKS.map((tick) => (
-            <span
-              key={tick.value}
-              className={`text-[10px] font-mono ${
-                Math.abs(stressFactor - tick.value) < 0.05
-                  ? 'text-cyan-400 font-semibold'
-                  : 'text-[hsl(215,12%,48%)]'
-              }`}
-            >
-              {tick.label}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Human-readable summary */}
-      {lastResult && (
-        <p className="text-xs text-[hsl(215,12%,68%)] mt-1">
-          {getSummaryText()}
-          {lastResult.confidence_interval_90 && (
-            <span className="text-[hsl(215,12%,48%)] ml-1">
-              (90% CI: {lastResult.confidence_interval_90[0]}–{lastResult.confidence_interval_90[1]} cycles)
-            </span>
-          )}
-        </p>
-      )}
-
-      {/* Error message */}
-      {error && (
-        <p className="text-xs text-red-400 px-2 py-1.5 rounded bg-red-500/10 border border-red-500/20">
-          {error}
-        </p>
-      )}
-    </div>
+    </GlowCard>
   );
 }

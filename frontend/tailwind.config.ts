@@ -73,6 +73,16 @@ const config: Config = {
       },
       /* Dark-first neutral palette with restrained accent */
       colors: {
+        /* Mission Control color tokens */
+        mission: {
+          bg: '#0a0b0f',
+          'surface-1': '#12141a',
+          'surface-2': '#1a1d27',
+          cyan: '#00d4ff',
+          violet: '#7c3aed',
+          emerald: '#10b981',
+          crimson: '#ef4444',
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

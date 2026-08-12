@@ -3,12 +3,13 @@
 Defines Pydantic models for structured JSON responses returned by the
 API Gateway endpoints.
 
-Requirements: 7.1, 7.2, 7.3, 7.7
+Requirements: 7.1, 7.2, 7.3, 7.7, 1.2, 2.1, 3.4, 4.2, 4.4
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
@@ -70,3 +71,111 @@ class ErrorResponse(BaseModel):
 
     error_code: str
     message: str
+
+
+# --- v1.4 Response Models ---
+
+
+class SensorContributionModel(BaseModel):
+    """A single sensor's contribution to an anomaly.
+
+    Requirements: 1.2
+    """
+
+    sensor_name: str
+    innovation_magnitude: float
+    sigma_deviation: float
+
+
+class AnomalyAnalysisResponse(BaseModel):
+    """Response for GET /engines/{engine_id}/anomaly-analysis.
+
+    Requirements: 1.2, 1.3
+    """
+
+    engine_id: int
+    anomaly_active: bool
+    timestamp: Optional[str] = None
+    contributions: List[SensorContributionModel] = []
+
+
+class AlertSeverityEnum(str, Enum):
+    """Severity levels for predictive maintenance alerts.
+
+    Requirements: 2.1
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    CRITICAL = "critical"
+
+
+class MaintenanceRecommendationModel(BaseModel):
+    """A single maintenance recommendation with timing and confidence.
+
+    Requirements: 2.1
+    """
+
+    severity: AlertSeverityEnum
+    time_to_critical_cycles: int
+    confidence_score: float
+    suggested_action: str
+    predicted_failure_mode: Optional[str] = None
+
+
+class MaintenanceRecommendationsResponse(BaseModel):
+    """Response for GET /engines/{engine_id}/maintenance-recommendations.
+
+    Requirements: 2.1
+    """
+
+    engine_id: int
+    recommendations: List[MaintenanceRecommendationModel] = []
+
+
+class BenchmarkMetricsResponse(BaseModel):
+    """Response for GET /metrics/benchmark.
+
+    Requirements: 3.4
+    """
+
+    raw_rmse: float
+    corrected_rmse: float
+    raw_mae: float
+    corrected_mae: float
+    correction_gain_pct: float
+    confidence_coverage_pct: float
+    sample_count: int
+
+
+class LatencyMetricsModel(BaseModel):
+    """Latency percentile metrics.
+
+    Requirements: 4.2
+    """
+
+    p50_ms: float
+    p95_ms: float
+    p99_ms: float
+    sample_count: int
+
+
+class ThroughputMetricsModel(BaseModel):
+    """Throughput rate metrics as rolling averages.
+
+    Requirements: 4.4
+    """
+
+    events_per_second: float
+    predictions_per_second: float
+    corrections_per_second: float
+
+
+class PerformanceMetricsResponse(BaseModel):
+    """Response for GET /metrics/performance.
+
+    Requirements: 4.2, 4.4
+    """
+
+    latency: LatencyMetricsModel
+    throughput: ThroughputMetricsModel

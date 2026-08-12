@@ -44,3 +44,17 @@ export type {
   FailureProbabilityResult,
   InjectFaultParams,
 } from './simulation';
+
+export type {
+  SensorContribution,
+  AnomalyAnalysisResponse,
+  AlertSeverity,
+  MaintenanceRecommendation,
+  MaintenanceRecommendationsResponse,
+  BenchmarkMetrics,
+  LatencyMetrics,
+  ThroughputMetrics,
+  PerformanceMetrics,
+  PredictiveAlert,
+  MissionControlState,
+} from './mission-control';

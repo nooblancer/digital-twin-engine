@@ -46,6 +46,16 @@ _engines_router = None
 _correction_metrics_router = None
 _fault_injection_router = None
 _simulation_router = None
+_benchmark_router = None
+
+
+def _get_benchmark_router():
+    """Lazily import the benchmark router to avoid circular imports."""
+    global _benchmark_router
+    if _benchmark_router is None:
+        from digital_twin_engine.api.benchmark import router as benchmark_router
+        _benchmark_router = benchmark_router
+    return _benchmark_router
 
 
 def _get_health_router():
@@ -197,6 +207,9 @@ class APIGateway:
 
         # Include simulation router (Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7)
         app.include_router(_get_simulation_router())
+
+        # Include benchmark router (Requirements 3.4)
+        app.include_router(_get_benchmark_router())
 
         @app.get(
             "/sensors/{sensor_id}/state/current",

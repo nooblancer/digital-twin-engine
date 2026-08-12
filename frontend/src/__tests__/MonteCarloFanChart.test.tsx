@@ -90,12 +90,12 @@ describe('MonteCarloFanChart', () => {
     const band75 = screen.getByTestId('area-band75');
     const median = screen.getByTestId('area-median');
 
-    // 5th-95th: very faint (0.08)
-    expect(band95.getAttribute('data-fill-opacity')).toBe('0.08');
+    // 5th-95th: gradient fill with 0.3 opacity
+    expect(band95.getAttribute('data-fill-opacity')).toBe('0.3');
     // 25th-75th: moderate (0.2)
     expect(band75.getAttribute('data-fill-opacity')).toBe('0.2');
-    // Median line: no fill
-    expect(median.getAttribute('data-fill')).toBe('none');
+    // Median line: gradient fill underneath
+    expect(median.getAttribute('data-fill-opacity')).toBe('0.2');
   });
 
   it('renders median with emerald stroke color', () => {

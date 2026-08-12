@@ -103,6 +103,11 @@ class CMAPSSConfig:
     # Maximum number of cycles to replay (None = all)
     max_cycles: Optional[int] = None
 
+    # Whether to stream engines in parallel (round-robin interleaving)
+    # When True, cycles are interleaved: E1C1, E2C1, E3C1, E1C2, E2C2, ...
+    # When False, engines are streamed sequentially (original behavior)
+    parallel_engines: bool = False
+
 
 @dataclass
 class EngineData:
@@ -239,8 +244,9 @@ class CMAPSSReplayAdapter:
     async def stream(self) -> AsyncIterator[TelemetryEvent]:
         """Stream TelemetryEvents from the loaded dataset.
 
-        Yields events at the configured playback speed. Each cycle produces
-        one event per sensor per engine, simulating real-time telemetry.
+        Dispatches to parallel or sequential streaming based on config.
+        Parallel mode interleaves cycles across engines (round-robin).
+        Sequential mode processes each engine's cycle in order (original behavior).
 
         Yields:
             TelemetryEvent objects in chronological order.
@@ -248,6 +254,22 @@ class CMAPSSReplayAdapter:
         if not self._loaded:
             raise RuntimeError("Call load() before streaming")
 
+        if self._config.parallel_engines:
+            async for event in self._stream_parallel():
+                yield event
+        else:
+            async for event in self._stream_sequential():
+                yield event
+
+    async def _stream_sequential(self) -> AsyncIterator[TelemetryEvent]:
+        """Stream TelemetryEvents sequentially — original behavior.
+
+        Each cycle produces one event per sensor per engine, iterating engines
+        in order within each cycle.
+
+        Yields:
+            TelemetryEvent objects in chronological order.
+        """
         sensor_list = self.get_sensor_list()
         cycle_interval = 1.0 / self._config.speed  # seconds between cycles
         self._start_time = time.monotonic()
@@ -309,6 +331,78 @@ class CMAPSSReplayAdapter:
             sleep_time = expected_elapsed - elapsed
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
+
+    async def _stream_parallel(self) -> AsyncIterator[TelemetryEvent]:
+        """Stream TelemetryEvents with round-robin interleaving across engines.
+
+        Interleaves cycles: E1C1, E2C1, E3C1, E1C2, E2C2, E3C2, ...
+        Each engine's events still arrive in chronological cycle order.
+        All engines begin receiving data simultaneously.
+
+        Yields:
+            TelemetryEvent objects interleaved across engines.
+        """
+        sensor_list = self.get_sensor_list()
+        cycle_interval = 1.0 / self._config.speed  # seconds between full rounds
+        self._start_time = time.monotonic()
+        self._total_events_emitted = 0
+
+        base_time = datetime.now(timezone.utc)
+        engine_ids = list(self._engines.keys())
+        cycle_idx = 0
+
+        while True:
+            any_data = False
+
+            # Round-robin: iterate each engine at this cycle index
+            for engine_id in engine_ids:
+                engine_data = self._engines[engine_id]
+
+                if cycle_idx >= engine_data.total_cycles:
+                    continue  # This engine has finished its run
+
+                if self._config.max_cycles and cycle_idx >= self._config.max_cycles:
+                    continue
+
+                any_data = True
+                cycle_data = engine_data.cycles[cycle_idx]
+
+                # Generate timestamp for this cycle
+                ts = base_time + timedelta(seconds=cycle_idx * cycle_interval)
+
+                # Emit one event per sensor for this engine at this cycle
+                for sensor_name in sensor_list:
+                    if sensor_name in cycle_data:
+                        sensor_id = f"engine-{engine_id:03d}-{sensor_name}"
+                        raw_value = cycle_data[sensor_name]
+
+                        # Apply fault injection (if any active faults for this sensor)
+                        if self._fault_injector is not None:
+                            value = self._fault_injector.apply(sensor_id, raw_value)
+                        else:
+                            value = raw_value
+
+                        event = TelemetryEvent(
+                            timestamp=ts,
+                            sensor_id=sensor_id,
+                            measurement_type=sensor_name,
+                            value=value,
+                        )
+                        self._total_events_emitted += 1
+                        yield event
+
+            if not any_data:
+                if self._config.loop:
+                    cycle_idx = 0
+                    base_time = datetime.now(timezone.utc)
+                    continue
+                else:
+                    break
+
+            cycle_idx += 1
+
+            # Pace the replay: delay after each full round of engines
+            await asyncio.sleep(1.0 / self._config.speed)
 
     def summary(self) -> Dict[str, object]:
         """Return a summary of the loaded dataset."""

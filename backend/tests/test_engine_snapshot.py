@@ -211,7 +211,12 @@ class TestEngineSnapshot:
         rul_predictor.add_engine(engine_id, rul=80, cycle_count=50)
         health_aggregator.add_engine(engine_id, health_index=0.72, cycle_count=50)
         component_mapper.add_engine(engine_id)
-        degradation_tracker.add_engine(engine_id, rate=-0.015)
+        # Trajectory starts from cycle 11 (post-baseline), matching real behavior
+        degradation_tracker.add_engine(
+            engine_id,
+            trajectory=[(i, 1.0 - (i - 11) * 0.01) for i in range(11, 36)],
+            rate=-0.015,
+        )
 
         response = await client.get(f"/api/engines/{engine_id}/snapshot")
 
@@ -225,7 +230,14 @@ class TestEngineSnapshot:
         assert data["health"]["health_index"] == 0.72
         assert data["health"]["is_provisional"] is False
         assert len(data["subsystems"]) == 6
-        assert len(data["trajectory"]) == 25
+        # 10 provisional (cycles 1-10) + 25 real (cycles 11-35) = 35
+        assert len(data["trajectory"]) == 35
+        # First 10 entries should be provisional HI=1.0
+        for i in range(10):
+            assert data["trajectory"][i]["cycle"] == i + 1
+            assert data["trajectory"][i]["health_index"] == 1.0
+        # Entry at index 10 should be cycle 11 (first real)
+        assert data["trajectory"][10]["cycle"] == 11
         assert data["degradation_rate"] == -0.015
 
     @pytest.mark.asyncio
@@ -303,9 +315,15 @@ class TestEngineSnapshot:
         component_mapper: MockComponentHealthMapper,
         degradation_tracker: MockDegradationTracker,
     ) -> None:
-        """Test that trajectory points have correct structure."""
+        """Test that trajectory points have correct structure.
+
+        After the baseline calibration fix (Req 15.6), the trajectory
+        prepends provisional HI=1.0 for cycles 1-10, then real values
+        from cycle 11+.
+        """
         engine_id = 3
-        trajectory = [(0, 1.0), (1, 0.98), (2, 0.95), (3, 0.90)]
+        # Real trajectory from degradation tracker starts at cycle 11+
+        trajectory = [(11, 0.98), (12, 0.95), (13, 0.90), (14, 0.85)]
         rul_predictor.add_engine(engine_id)
         health_aggregator.add_engine(engine_id)
         component_mapper.add_engine(engine_id)
@@ -316,9 +334,14 @@ class TestEngineSnapshot:
         assert response.status_code == 200
         data = response.json()
 
-        assert len(data["trajectory"]) == 4
-        assert data["trajectory"][0] == {"cycle": 0, "health_index": 1.0}
-        assert data["trajectory"][1] == {"cycle": 1, "health_index": 0.98}
+        # 10 provisional (cycles 1-10) + 4 real (cycles 11-14) = 14
+        assert len(data["trajectory"]) == 14
+        # First 10 are provisional HI=1.0
+        for i in range(10):
+            assert data["trajectory"][i] == {"cycle": i + 1, "health_index": 1.0}
+        # Real values from cycle 11+
+        assert data["trajectory"][10] == {"cycle": 11, "health_index": 0.98}
+        assert data["trajectory"][11] == {"cycle": 12, "health_index": 0.95}
 
     @pytest.mark.asyncio
     async def test_snapshot_engine_only_in_rul_predictor(

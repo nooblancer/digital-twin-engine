@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.4.0] - 2026-08-15 — Mission Control (v1.4)
+
+### Summary
+
+Transforms the dashboard into a premium aerospace command center with glassmorphism styling, bento grid layout, and four new backend intelligence modules. Adds anomaly root cause analysis, predictive maintenance alerting, live accuracy benchmarking, and end-to-end latency/throughput monitoring. Frontend delivers a full visual overhaul: interactive SVG turbofan schematic with health-based glow effects, 21-channel telemetry waterfall heatmap, root cause analysis panels, predictive alert notifications, and animated data arrival effects. Also resolves three v1.3 carryover issues (baseline calibration, parallel streaming, insufficient-data UX).
+
+### Added
+
+#### Backend — Intelligence Modules
+- **Root Cause Analyzer** (`alerting/root_cause.py`) — Ranks contributing sensors by innovation magnitude (sigma deviation) when anomalies are detected. Rolling 200-cycle history per sensor for statistical context.
+- **Predictive Alert System** (`alerting/predictive_alerts.py`) — Uses MonteCarloProjector to forward-project 100 cycles, estimate time-to-critical, and generate severity-classified maintenance recommendations (low/medium/critical).
+- **Live Benchmark Runner** (`benchmarking/benchmark_runner.py`) — Continuously computes RMSE, MAE, correction gain %, and confidence coverage against C-MAPSS ground truth over a rolling 5000-sample window.
+- **Latency Profiler** (`benchmarking/latency_profiler.py`) — Tracks ingestion-to-correction latency with p50/p95/p99 percentiles. Orphan span eviction after 30s timeout.
+- **Throughput Monitor** (`benchmarking/throughput_monitor.py`) — Rolling 10-second window rates for events/sec, predictions/sec, corrections/sec.
+
+#### Backend — REST API Endpoints
+- `GET /engines/{id}/anomaly-analysis` — Ranked sensor contributions for latest anomaly
+- `GET /engines/{id}/maintenance-recommendations` — Predictive maintenance alerts with time-to-critical
+- `GET /metrics/benchmark` — Live accuracy metrics (RMSE, MAE, correction gain, coverage)
+- `GET /metrics/performance` — Latency percentiles + throughput rates
+
+#### Frontend — Mission Control Visual Overhaul
+- **GlassStatusBar** — Glassmorphism header with PulseIndicator, AnimatedCounter, mini sparklines (polls /metrics/performance every 5s)
+- **BentoGrid** — CSS Grid layout with variable card sizes (1x1, 2x1, 1x2, 2x2, 3x2), responsive collapse below 768px
+- **GlowCard** — Animated border glow on WebSocket data arrival (cyan/violet/emerald), false→true pulse detection
+- **PulseIndicator** — Connection status (green pulse/red static/amber blink) with ARIA labels
+- **GradientBorder** — Rotating gradient border with prefers-reduced-motion support
+- **AnimatedCounter** — Spring-physics number interpolation via framer-motion
+- **TurbofanSchematic** — Interactive SVG cross-section with 7 subsystem regions, CSS glow filters (healthy/warning/critical), animated airflow paths, click-to-expand detail panels, full keyboard accessibility. NO WebGL.
+- **TelemetryWaterfall** — Canvas-based 21×50 scrolling heatmap with ring buffer, requestAnimationFrame 60fps rendering, HTML table fallback
+- **RootCausePanel** — Horizontal bar charts showing sensor contributions ranked by sigma deviation, loading skeleton, error state with retry
+- **PredictiveAlertNotification** — Toast notifications (fixed bottom-right), color-coded by severity, auto-dismiss (low=10s, medium=30s, critical=persists), max 5 visible, stacked by priority
+- **EnhancedLineChart** — Recharts wrapper with gradient fills, latest-point glow dot, glass-styled custom tooltip, 200-point performance cap
+
+#### Frontend — Design System
+- Mission Control color palette: bg (#0a0b0f), surface-1 (#12141a), surface-2 (#1a1d27), cyan (#00d4ff), violet (#7c3aed), emerald (#10b981), crimson (#ef4444)
+- Glow utilities (`.glow-cyan`, `.glow-violet`, `.glow-emerald`), glassmorphism (`.glass`), grid-pattern background
+- Hover depth micro-animation (translateY -2px on hover)
+- All animations respect `prefers-reduced-motion`
+
+#### Testing
+- 6 Hypothesis property tests (sigma deviation, severity classification, correction gain, monotonic percentiles, rate computation, constant history)
+- 4 fast-check property tests (BentoGrid item integrity, waterfall buffer bound, GlowCard active toggle, auto-dismiss timing)
+- ~100 new frontend unit tests across all v1.4 components
+- ~50 new backend unit tests for intelligence modules and API endpoints
+
+### Fixed (v1.3 Carryover)
+- **Health Index baseline calibration** — Reports HI=1.0 during first 10 cycles instead of garbage values from unstable baselines. DegradationTracker only receives data from cycle 11+.
+- **Parallel engine streaming** — C-MAPSS adapter now interleaves engines round-robin (E1C1, E2C1, E3C1, E1C2...) so all engines start receiving data simultaneously.
+- **Insufficient-data UX** — WhatIfStressSlider shows calm progress indicator ("Collecting data: N/20 cycles") instead of red error. Slider disabled during calibration, auto-enables when ready.
+- **v1.3 visual polish** — All simulation components wrapped in GlowCard, hardcoded hex replaced with Mission Control tokens, BentoGrid layout on engine detail page.
+
+### Changed
+- Default adapter speed reduced to 0.5x (was 10.0x) for realistic observation pace
+- Dashboard page (`/dashboard`) rewritten with BentoGrid + GlassStatusBar + grid-pattern background
+- Engine detail page uses BentoGrid for simulation components with correct spans
+- `run_local.py` wires all v1.4 modules with broker subscriptions for pipeline hooks
+- GlowCard extended with "red" and "amber" glow colors for RUL urgency states
+
+---
+
 ## [0.3.0] - 2026-08-12 — Interactive Intelligence (v1.3)
 
 ### Summary

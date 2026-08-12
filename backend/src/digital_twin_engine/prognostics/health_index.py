@@ -180,7 +180,7 @@ class _EngineBaselineState:
 
     @property
     def baseline_established(self) -> bool:
-        return self._cycle_count >= BASELINE_CYCLES
+        return self._cycle_count > BASELINE_CYCLES
 
     def record_cycle(self, cycle_readings: Dict[str, float]) -> None:
         """Record a complete cycle of readings for baseline computation.
@@ -353,6 +353,11 @@ class HealthIndexAggregator:
         Computes health index if enough readings are available, otherwise
         retains the previous health index and flags as incomplete.
 
+        During the baseline period (first BASELINE_CYCLES cycles), reports
+        HI=1.0 as a provisional value and does NOT feed the
+        DegradationCurveTracker, preventing false degradation rate
+        calculations from unstable early baselines.
+
         Args:
             engine_id: The engine unit identifier.
         """
@@ -379,14 +384,52 @@ class HealthIndexAggregator:
                 )
             return
 
-        # Record cycle for baseline computation
+        # Record cycle for baseline computation (must always happen so
+        # baseline data accumulates even during the provisional period)
         baseline_state.record_cycle(cycle_readings)
 
-        # Compute health index
+        # --- Baseline guard: report HI=1.0 during calibration period ---
+        # During the first BASELINE_CYCLES cycles the baseline (mean/std)
+        # is unstable. Computing deviation-based HI would produce garbage
+        # values (near 0.0) for healthy engines. Instead, report a
+        # provisional HI of 1.0 and do NOT feed the degradation tracker.
+        if not baseline_state.baseline_established:
+            health_index = 1.0
+            is_provisional = True
+
+            # Update health state
+            self._health_states[engine_id] = EngineHealthState(
+                engine_id=engine_id,
+                health_index=health_index,
+                cycle_count=baseline_state.cycle_count,
+                is_provisional=is_provisional,
+                last_update_cycle=baseline_state.cycle_count,
+            )
+
+            # Broadcast provisional HI via WebSocket
+            await self._ws_manager.broadcast(
+                "health_index_update",
+                {
+                    "engine_id": engine_id,
+                    "health_index": health_index,
+                    "cycle_number": baseline_state.cycle_count,
+                    "is_provisional": is_provisional,
+                },
+            )
+
+            logger.info(
+                "Baseline period — reporting provisional HI=1.0",
+                engine_id=engine_id,
+                cycle=baseline_state.cycle_count,
+                baseline_cycles_remaining=BASELINE_CYCLES - baseline_state.cycle_count,
+            )
+            return
+
+        # --- Post-baseline: compute real health index ---
         health_index = self.compute_health_index(engine_id, cycle_readings)
 
         # Determine provisional flag
-        is_provisional = not baseline_state.baseline_established
+        is_provisional = False
 
         # Update health state
         self._health_states[engine_id] = EngineHealthState(
@@ -408,7 +451,7 @@ class HealthIndexAggregator:
             },
         )
 
-        # Feed the degradation tracker if wired
+        # Feed the degradation tracker if wired (only post-baseline)
         if self._degradation_tracker is not None:
             await self._degradation_tracker.record_async(
                 engine_id, baseline_state.cycle_count, health_index

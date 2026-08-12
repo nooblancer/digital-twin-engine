@@ -11,6 +11,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts';
+import { GlowCard } from '@/components/ui/GlowCard';
 import type { SimulationResult } from '@/types/simulation';
 
 const CRITICAL_THRESHOLD = 0.4;
@@ -20,6 +21,8 @@ interface MonteCarloFanChartProps {
   percentiles: SimulationResult['percentiles'] | null;
   /** Chart height in pixels */
   height?: number;
+  /** Whether the engine has insufficient data for simulation (< 20 cycles) */
+  insufficientData?: boolean;
 }
 
 export interface FanDataPoint {
@@ -104,7 +107,7 @@ function FanChartTooltip({ active, payload, label }: any) {
  *
  * Also renders a horizontal dashed red Critical Threshold line at 0.4.
  */
-export function MonteCarloFanChart({ percentiles, height = 300 }: MonteCarloFanChartProps) {
+export function MonteCarloFanChart({ percentiles, height = 300, insufficientData = false }: MonteCarloFanChartProps) {
   const chartData: FanDataPoint[] = useMemo(() => {
     if (!percentiles) return [];
     return transformPercentiles(percentiles);
@@ -112,90 +115,109 @@ export function MonteCarloFanChart({ percentiles, height = 300 }: MonteCarloFanC
 
   if (!percentiles) {
     return (
-      <div
-        className="flex items-center justify-center rounded-lg border border-white/5 bg-[#12141a]"
-        style={{ height }}
-      >
-        <p className="text-sm text-gray-400">
-          No simulation data available. Adjust the stress slider to generate a projection.
-        </p>
-      </div>
+      <GlowCard glowColor="cyan" isActive={false}>
+        <div
+          className="flex items-center justify-center"
+          style={{ height }}
+        >
+          <p className="text-sm text-gray-400">
+            {insufficientData
+              ? 'Simulation will become available once the engine accumulates 20 cycles of data.'
+              : 'No simulation data available. Adjust the stress slider to generate a projection.'}
+          </p>
+        </div>
+      </GlowCard>
     );
   }
 
   return (
-    <div className="w-full">
-      <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-          <CartesianGrid stroke="hsl(220, 10%, 20%)" strokeDasharray="3 3" />
+    <GlowCard glowColor="cyan" isActive={!!percentiles}>
+      <div className="w-full">
+        <ResponsiveContainer width="100%" height={height}>
+          <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+            {/* Gradient fill defs consistent with Requirement 9 */}
+            <defs>
+              <linearGradient id="gradient-fan-cyan" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#00d4ff" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#00d4ff" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="gradient-fan-emerald" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+              </linearGradient>
+            </defs>
 
-          <XAxis
-            dataKey="cycle"
-            label={{ value: 'Cycles from Now', position: 'insideBottom', offset: -4, style: { fill: 'hsl(215, 12%, 58%)', fontSize: 11 } }}
-            stroke="hsl(215, 12%, 58%)"
-            tick={{ fontSize: 11 }}
-          />
+            <CartesianGrid stroke="hsl(220, 10%, 20%)" strokeDasharray="3 3" />
 
-          <YAxis
-            domain={[0, 1]}
-            label={{ value: 'Health Index', angle: -90, position: 'insideLeft', offset: 10, style: { fill: 'hsl(215, 12%, 58%)', fontSize: 11 } }}
-            stroke="hsl(215, 12%, 58%)"
-            tick={{ fontSize: 11 }}
-          />
+            <XAxis
+              dataKey="cycle"
+              label={{ value: 'Cycles from Now', position: 'insideBottom', offset: -4, style: { fill: 'hsl(215, 12%, 58%)', fontSize: 11 } }}
+              stroke="hsl(215, 12%, 58%)"
+              tick={{ fontSize: 11 }}
+            />
 
-          <Tooltip content={<FanChartTooltip />} />
+            <YAxis
+              domain={[0, 1]}
+              label={{ value: 'Health Index', angle: -90, position: 'insideLeft', offset: 10, style: { fill: 'hsl(215, 12%, 58%)', fontSize: 11 } }}
+              stroke="hsl(215, 12%, 58%)"
+              tick={{ fontSize: 11 }}
+            />
 
-          {/* Critical Threshold reference line */}
-          <ReferenceLine
-            y={CRITICAL_THRESHOLD}
-            stroke="#ef4444"
-            strokeDasharray="6 4"
-            strokeWidth={1.5}
-            label={{
-              value: 'Critical Threshold',
-              position: 'right',
-              fill: '#ef4444',
-              fontSize: 11,
-            }}
-          />
+            <Tooltip content={<FanChartTooltip />} />
 
-          {/* 5th–95th percentile band — widest, faintest */}
-          <Area
-            type="monotone"
-            dataKey="band95"
-            name="5th–95th Percentile"
-            stroke="none"
-            fill="#00d4ff"
-            fillOpacity={0.08}
-            animationDuration={500}
-            isAnimationActive={true}
-          />
+            {/* Critical Threshold reference line */}
+            <ReferenceLine
+              y={CRITICAL_THRESHOLD}
+              stroke="#ef4444"
+              strokeDasharray="6 4"
+              strokeWidth={1.5}
+              label={{
+                value: 'Critical Threshold',
+                position: 'right',
+                fill: '#ef4444',
+                fontSize: 11,
+              }}
+            />
 
-          {/* 25th–75th percentile band — moderate opacity */}
-          <Area
-            type="monotone"
-            dataKey="band75"
-            name="25th–75th Percentile"
-            stroke="none"
-            fill="#00d4ff"
-            fillOpacity={0.2}
-            animationDuration={500}
-            isAnimationActive={true}
-          />
+            {/* 5th–95th percentile band — widest, with gradient fill */}
+            <Area
+              type="monotone"
+              dataKey="band95"
+              name="5th–95th Percentile"
+              stroke="none"
+              fill="url(#gradient-fan-cyan)"
+              fillOpacity={0.3}
+              animationDuration={500}
+              isAnimationActive={true}
+            />
 
-          {/* Median line (50th percentile) — solid emerald */}
-          <Area
-            type="monotone"
-            dataKey="median"
-            name="Median (50th)"
-            stroke="#10b981"
-            strokeWidth={2}
-            fill="none"
-            animationDuration={500}
-            isAnimationActive={true}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
+            {/* 25th–75th percentile band — moderate opacity */}
+            <Area
+              type="monotone"
+              dataKey="band75"
+              name="25th–75th Percentile"
+              stroke="none"
+              fill="#00d4ff"
+              fillOpacity={0.2}
+              animationDuration={500}
+              isAnimationActive={true}
+            />
+
+            {/* Median line (50th percentile) — solid emerald with gradient fill underneath */}
+            <Area
+              type="monotone"
+              dataKey="median"
+              name="Median (50th)"
+              stroke="#10b981"
+              strokeWidth={2}
+              fill="url(#gradient-fan-emerald)"
+              fillOpacity={0.2}
+              animationDuration={500}
+              isAnimationActive={true}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </GlowCard>
   );
 }

@@ -74,6 +74,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
   const updateDegradation = useStore((s) => s.updateDegradation);
   const restoreSnapshot = useStore((s) => s.restoreSnapshot);
   const updateCorrectionMetrics = useStore((s) => s.updateCorrectionMetrics);
+  const incrementEventCount = useStore((s) => s.incrementEventCount);
 
   const requestSnapshotsOnReconnect = useCallback(async () => {
     const state = useStore.getState();
@@ -117,6 +118,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
             timestamp: new Date(payload.timestamp).getTime(),
             raw: payload.value,
           });
+          incrementEventCount();
           break;
         }
         case 'prediction': {
@@ -125,6 +127,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
             timestamp: new Date(payload.prediction_timestamp).getTime(),
             predicted: payload.state_vector[0],
           });
+          incrementEventCount();
           break;
         }
         case 'correction': {
@@ -135,6 +138,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
           });
           updateSensorHealth(payload.sensor_id, payload);
           updateCorrectionMetrics(message.payload as ExtendedCorrectionPayload);
+          incrementEventCount();
           break;
         }
         case 'anomaly': {
@@ -146,26 +150,31 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
             severity: payload.severity,
             description: payload.description,
           });
+          incrementEventCount();
           break;
         }
         case 'rul_update': {
           const payload = message.payload as RULUpdatePayload;
           updateRUL(payload);
+          incrementEventCount();
           break;
         }
         case 'health_index_update': {
           const payload = message.payload as HealthIndexUpdatePayload;
           updateHealthIndex(payload);
+          incrementEventCount();
           break;
         }
         case 'subsystem_health_update': {
           const payload = message.payload as SubsystemHealthUpdatePayload;
           updateSubsystemHealth(payload);
+          incrementEventCount();
           break;
         }
         case 'degradation_update': {
           const payload = message.payload as DegradationUpdatePayload;
           updateDegradation(payload);
+          incrementEventCount();
           break;
         }
         default:
@@ -181,6 +190,7 @@ export function useWebSocket(url: string = DEFAULT_WS_URL): void {
       updateSubsystemHealth,
       updateDegradation,
       updateCorrectionMetrics,
+      incrementEventCount,
     ]
   );
 
